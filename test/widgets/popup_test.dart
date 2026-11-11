@@ -279,6 +279,55 @@ void main() {
     );
   });
 
+  for (final (name, anchor, bounds, topLeft) in [
+    (
+      'opens under its control, start edges lined up',
+      const Rect.fromLTWH(100, 120, 60, 32),
+      null,
+      const Offset(100, 156),
+    ),
+    (
+      'keeps to the end of its bounds',
+      const Rect.fromLTWH(700, 120, 60, 32),
+      const Rect.fromLTRB(24, 0, 776, 600),
+      const Offset(696, 156),
+    ),
+    (
+      'flips above a control too close to the bottom',
+      const Rect.fromLTWH(100, 520, 60, 32),
+      null,
+      const Offset(100, 436),
+    ),
+  ]) {
+    testWidgets('a below-anchor placement $name', (tester) async {
+      late BuildContext context;
+      await tester.pumpWidget(
+        HostApp(
+          home: Builder(
+            builder: (value) {
+              context = value;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      );
+
+      Navigator.of(context).push(
+        AnchoredPopupRoute<void>(
+          barrierLabel: 'Dismiss',
+          placement: PopupPlacement.belowAnchorStart,
+          anchorOf: () => anchor,
+          boundsOf: () => bounds,
+          builder: (_) =>
+              const SizedBox(width: 80, height: 80, key: Key('popup')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.getTopLeft(find.byKey(const Key('popup'))), topLeft);
+    });
+  }
+
   for (final (name, point, avoid, top) in [
     ('flips above a point too close to the bottom', 560.0, null, 480.0),
     (
@@ -577,6 +626,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('popup')), findsNothing);
     expect(sourceOpacity(), 1);
+  });
+
+  testWidgets('a popup under its control leaves the control in view and '
+      'keeps within its bounds', (tester) async {
+    late PopupOpen open;
+    await tester.pumpWidget(
+      HostApp(
+        home: HostScaffold(
+          body: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: PopupBounds(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: PopupAnchor(
+                  placement: PopupPlacement.belowAnchorStart,
+                  targetBuilder: (value) {
+                    open = value;
+                    return const SizedBox(width: 40, height: 40);
+                  },
+                  popupBuilder: (_) =>
+                      const SizedBox(width: 80, height: 80, key: Key('popup')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final anchor = tester.getRect(find.byType(PopupAnchor));
+    final bounds = tester.getRect(find.byType(PopupBounds));
+
+    open();
+    await tester.pumpAndSettle();
+
+    final popup = tester.getRect(find.byKey(const Key('popup')));
+    expect(popup.top, anchor.bottom + 4);
+    expect(popup.right, bounds.right);
+    expect(
+      tester
+          .widget<Opacity>(
+            find.descendant(
+              of: find.byType(PopupAnchor),
+              matching: find.byType(Opacity),
+            ),
+          )
+          .opacity,
+      1,
+    );
   });
 
   testWidgets('a bare control takes its drop of glass clear of the text', (
