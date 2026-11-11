@@ -41,6 +41,7 @@ class _SwitchState extends State<Switch> with TickerProviderStateMixin {
   static const _toggleDuration = Duration(milliseconds: 300);
   static const _pressDuration = Duration(milliseconds: 150);
   static const _tapLift = Duration(milliseconds: 200);
+  static const _disabledOpacity = 0.45;
 
   late final _toggle = AnimationController(
     vsync: this,
@@ -192,24 +193,15 @@ class _SwitchState extends State<Switch> with TickerProviderStateMixin {
       width: Switch.trackWidth,
       height: Switch.trackHeight,
     );
-    final trackColor = enabled
-        ? Color.lerp(
-            colorScheme.surfaceContainerHighest,
-            colorScheme.primary,
-            on,
-          )
-        : Color.lerp(
-            colorScheme.surfaceContainerHighest.withValues(alpha: 0.12),
-            colorScheme.onSurface.withValues(alpha: 0.12),
-            on,
-          );
+    // A disabled switch keeps its look and fades as a whole.
+    final trackColor = Color.lerp(
+      colorScheme.surfaceContainerHighest,
+      colorScheme.primary,
+      on,
+    );
     final thumbColor = enabled
         ? Color.lerp(colorScheme.outline, colorScheme.onPrimary, on)!
-        : Color.lerp(
-            colorScheme.onSurface.withValues(alpha: 0.38),
-            colorScheme.surface,
-            on,
-          )!;
+        : Color.lerp(Colors.white, colorScheme.onPrimary, on)!;
     final shadows = [
       if (lift > 0)
         BoxShadow(
@@ -229,7 +221,7 @@ class _SwitchState extends State<Switch> with TickerProviderStateMixin {
         shadows: lens ? null : shadows,
       ),
     );
-    return Stack(
+    final parts = Stack(
       clipBehavior: Clip.none,
       children: [
         Positioned.fromRect(
@@ -264,6 +256,7 @@ class _SwitchState extends State<Switch> with TickerProviderStateMixin {
           ),
       ],
     );
+    return enabled ? parts : Opacity(opacity: _disabledOpacity, child: parts);
   }
 
   @override
