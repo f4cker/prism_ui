@@ -33,13 +33,20 @@ typedef PopupAnchorResolver = Rect? Function();
 
 typedef PopupOpen = void Function();
 
-enum PopupPlacement { overAnchorEnd, overAnchorStart, belowPoint }
+enum PopupPlacement {
+  overAnchorEnd,
+  overAnchorStart,
+  belowPoint,
+  belowAnchorStart,
+}
 
 const _screenMargin = 16.0;
 
 const _anchorOverlap = 8.0;
 
 const _avoidGap = 8.0;
+
+const _belowAnchorGap = 4.0;
 
 const _cardInset = 8.0;
 
@@ -155,6 +162,7 @@ class AnchoredPopupRoute<T> extends PopupRoute<T> {
     this.bareSource = false,
     this.modal = true,
     this.avoid,
+    this.boundsOf,
   }) : super(requestFocus: modal ? null : false);
 
   final WidgetBuilder builder;
@@ -182,6 +190,9 @@ class AnchoredPopupRoute<T> extends PopupRoute<T> {
 
   /// A rect the popup keeps clear of when there is room above or below it.
   final Rect? avoid;
+
+  /// Resolves the rect whose sides the popup stays between.
+  final PopupAnchorResolver? boundsOf;
 
   @override
   final String? barrierLabel;
@@ -345,6 +356,7 @@ class AnchoredPopupRoute<T> extends PopupRoute<T> {
               safeInsets: safeInsets,
               placement: placement,
               avoid: avoid,
+              bounds: boundsOf?.call(),
               pin: _pin,
             ),
             child: _PopupMorph(
@@ -1274,12 +1286,14 @@ class _PopupLayoutDelegate extends SingleChildLayoutDelegate {
     required this.placement,
     required this.pin,
     this.avoid,
+    this.bounds,
   });
 
   final Rect anchor;
   final EdgeInsets safeInsets;
   final PopupPlacement placement;
   final Rect? avoid;
+  final Rect? bounds;
   final _PopupPin pin;
 
   EdgeInsets get _insets => safeInsets + const EdgeInsets.all(_screenMargin);
@@ -1319,12 +1333,23 @@ class _PopupLayoutDelegate extends SingleChildLayoutDelegate {
               anchor.left,
               _yBelowPoint(childSize.height, insets.top, maxY),
             ),
+            PopupPlacement.belowAnchorStart => (
+              anchor.left,
+              _yBelowAnchor(childSize.height, insets.top, maxY),
+            ),
           };
-    final minY = placement == PopupPlacement.belowPoint
-        ? insets.top
-        : math.max(safeInsets.top, math.min(insets.top, y));
+    final minY = switch (placement) {
+      PopupPlacement.belowPoint ||
+      PopupPlacement.belowAnchorStart => insets.top,
+      _ => math.max(safeInsets.top, math.min(insets.top, y)),
+    };
+    final bounds = this.bounds;
+    final minX = math.max(insets.left, bounds?.left ?? insets.left);
+    final boundedMaxX = bounds == null
+        ? maxX
+        : math.min(maxX, bounds.right - childSize.width);
     final position = Offset(
-      x.clamp(insets.left, math.max(insets.left, maxX)),
+      x.clamp(minX, math.max(minX, boundedMaxX)),
       y.clamp(minY, math.max(minY, maxY)),
     );
     if (pinned == null) {
@@ -1351,11 +1376,18 @@ class _PopupLayoutDelegate extends SingleChildLayoutDelegate {
     return anchor.bottom;
   }
 
+  double _yBelowAnchor(double height, double minY, double maxY) {
+    final below = anchor.bottom + _belowAnchorGap;
+    final above = anchor.top - _belowAnchorGap - height;
+    return below > maxY && above >= minY ? above : below;
+  }
+
   bool _placesLike(_PopupLayoutDelegate other) {
     return other.anchor == anchor &&
         other.safeInsets == safeInsets &&
         other.placement == placement &&
-        other.avoid == avoid;
+        other.avoid == avoid &&
+        other.bounds == bounds;
   }
 
   @override
@@ -1384,6 +1416,14 @@ class _PopupPin {
     _size = size;
     _topRight = topRight;
   }
+}
+
+/// Keeps the popups of the [PopupAnchor]s under it between its own sides.
+class PopupBounds extends InheritedWidget {
+  const PopupBounds({super.key, required super.child});
+
+  @override
+  bool updateShouldNotify(PopupBounds oldWidget) => false;
 }
 
 /// Opens a popup out of the button [targetBuilder] builds. A press on the
@@ -1425,19 +1465,31 @@ class _PopupAnchorState extends State<PopupAnchor> {
     super.dispose();
   }
 
-  Rect? _sourceRect() {
-    if (!mounted) {
-      return null;
-    }
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.attached || !renderBox.hasSize) {
+  Rect? _rectOf(RenderObject? renderObject) {
+    if (!mounted ||
+        renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
       return null;
     }
     final navigatorBox =
         Navigator.maybeOf(context)?.context.findRenderObject() as RenderBox?;
-    final origin = renderBox.localToGlobal(Offset.zero, ancestor: navigatorBox);
-    return origin & renderBox.size;
+    final origin = renderObject.localToGlobal(
+      Offset.zero,
+      ancestor: navigatorBox,
+    );
+    return origin & renderObject.size;
   }
+
+  Rect? _sourceRect() => _rectOf(mounted ? context.findRenderObject() : null);
+
+  Rect? _boundsRect() => _rectOf(
+    mounted
+        ? context
+              .getElementForInheritedWidgetOfExactType<PopupBounds>()
+              ?.findRenderObject()
+        : null,
+  );
 
   Color _sourceColor() {
     Color? color;
@@ -1571,15 +1623,18 @@ class _PopupAnchorState extends State<PopupAnchor> {
     if (_route != null) {
       return;
     }
+    final returnsIntoSource =
+        widget.placement != PopupPlacement.belowAnchorStart;
     final snapshot = ValueNotifier<ui.Image?>(null);
     final route = _route = AnchoredPopupRoute<void>(
       barrierLabel: UiLocalizations.of(context).close,
       builder: (context) => widget.popupBuilder(context),
       anchorOf: _sourceRect,
+      boundsOf: _boundsRect,
       placement: widget.placement,
       elevated: ElevatedSurfaceTheme.isIn(context),
       sourceColor: widget.bare ? Colors.transparent : _sourceColor(),
-      sourceImage: snapshot,
+      sourceImage: returnsIntoSource ? snapshot : null,
       bareSource: widget.bare,
     );
     Navigator.of(context).push(route);
@@ -1602,6 +1657,9 @@ class _PopupAnchorState extends State<PopupAnchor> {
       snapshot.value?.dispose();
       snapshot.dispose();
     });
+    if (!returnsIntoSource) {
+      return;
+    }
     // The control repaints its ink as it is tapped, so it can only be
     // captured once that frame has been painted.
     WidgetsBinding.instance.addPostFrameCallback(
