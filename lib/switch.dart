@@ -18,11 +18,15 @@ class Switch extends StatefulWidget {
     required this.value,
     required this.onChanged,
     this.semanticLabel,
+    this.fadeWhenDisabled = false,
   });
 
   final bool value;
   final ValueChanged<bool>? onChanged;
   final String? semanticLabel;
+
+  /// Disabled, fades the enabled look as a whole instead of using M3 colors.
+  final bool fadeWhenDisabled;
 
   static const trackWidth = 52.0;
   static const trackHeight = 32.0;
@@ -193,15 +197,27 @@ class _SwitchState extends State<Switch> with TickerProviderStateMixin {
       width: Switch.trackWidth,
       height: Switch.trackHeight,
     );
-    // A disabled switch keeps its look and fades as a whole.
-    final trackColor = Color.lerp(
-      colorScheme.surfaceContainerHighest,
-      colorScheme.primary,
-      on,
-    );
+    final faded = !enabled && widget.fadeWhenDisabled;
+    final trackColor = enabled || faded
+        ? Color.lerp(
+            colorScheme.surfaceContainerHighest,
+            colorScheme.primary,
+            on,
+          )
+        : Color.lerp(
+            colorScheme.surfaceContainerHighest.withValues(alpha: 0.12),
+            colorScheme.onSurface.withValues(alpha: 0.12),
+            on,
+          );
     final thumbColor = enabled
         ? Color.lerp(colorScheme.outline, colorScheme.onPrimary, on)!
-        : Color.lerp(Colors.white, colorScheme.onPrimary, on)!;
+        : faded
+        ? Color.lerp(Colors.white, colorScheme.onPrimary, on)!
+        : Color.lerp(
+            colorScheme.onSurface.withValues(alpha: 0.38),
+            colorScheme.surface,
+            on,
+          )!;
     final shadows = [
       if (lift > 0)
         BoxShadow(
@@ -256,7 +272,7 @@ class _SwitchState extends State<Switch> with TickerProviderStateMixin {
           ),
       ],
     );
-    return enabled ? parts : Opacity(opacity: _disabledOpacity, child: parts);
+    return faded ? Opacity(opacity: _disabledOpacity, child: parts) : parts;
   }
 
   @override
