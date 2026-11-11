@@ -361,19 +361,33 @@ class TonalButton extends StatelessWidget {
     super.key,
     this.size = TonalButtonSize.section,
     this.glyph,
+    this.trailingGlyph,
     required this.label,
     required this.onPressed,
   });
 
   final TonalButtonSize size;
   final Glyph? glyph;
+
+  /// A glyph after the label, 4 dp from it, as a disclosure chevron sits.
+  final Glyph? trailingGlyph;
   final String label;
   final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     final glyph = this.glyph;
-    final label = Text(this.label);
+    final trailingGlyph = this.trailingGlyph;
+    final Widget label = trailingGlyph == null
+        ? Text(this.label)
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 4,
+            children: [
+              Flexible(child: Text(this.label)),
+              GlyphIcon(trailingGlyph, size: 18, fill: 1),
+            ],
+          );
     return ElasticPress(
       enabled: onPressed != null,
       child: DecoratedBox(
