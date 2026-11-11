@@ -32,6 +32,9 @@ class SearchField extends StatefulWidget {
   final Color? fill;
   final Glyph glyph;
   final String? hintText;
+
+  /// The text's style, the hint's in onSurfaceVariant; body when null.
+  final TextStyle? style;
   final VoidCallback? onSubmitted;
   final Widget? trailing;
 
@@ -45,6 +48,7 @@ class SearchField extends StatefulWidget {
     this.fill,
     this.glyph = Glyphs.search,
     this.hintText,
+    this.style,
     this.onSubmitted,
     this.trailing,
   });
@@ -89,7 +93,7 @@ class _SearchFieldState extends State<SearchField> {
           maxLines: 1,
           textAlignVertical: TextAlignVertical.center,
           textInputAction: TextInputAction.search,
-          style: AppTextStyle.body.of(context),
+          style: widget.style ?? AppTextStyle.body.of(context),
           inputFormatters: [LengthLimitingTextInputFormatter(_maxLength)],
           onChanged: widget.onChanged,
           onSubmitted: (_) => widget.onSubmitted?.call(),
@@ -102,6 +106,9 @@ class _SearchFieldState extends State<SearchField> {
             filled: widget.fill != null,
             fillColor: widget.fill,
             hintText: widget.hintText ?? localizations.search,
+            hintStyle: widget.style?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
             border: pill.copyWith(borderSide: BorderSide.none),
             enabledBorder: pill.copyWith(borderSide: BorderSide.none),
             focusedBorder: pill.copyWith(
