@@ -21,9 +21,18 @@ const _touchDevices = {
 /// otherwise leave covered.
 class ContextMenuRegion extends StatefulWidget {
   final List<PopupMenuItem>? menuItems;
+
+  /// Opens a long press menu with its corner at the press rather than clear
+  /// of the row, for rows whose neighbours would otherwise seem to own it.
+  final bool openAtPress;
   final Widget child;
 
-  const ContextMenuRegion({super.key, this.menuItems, required this.child});
+  const ContextMenuRegion({
+    super.key,
+    this.menuItems,
+    this.openAtPress = false,
+    required this.child,
+  });
 
   @override
   State<ContextMenuRegion> createState() => _ContextMenuRegionState();
@@ -216,7 +225,7 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
                   ),
                   (recognizer) => recognizer.onLongPressStart = (details) {
                     Feedback.forLongPress(context);
-                    _open(details.globalPosition, avoid: true);
+                    _open(details.globalPosition, avoid: !widget.openAtPress);
                   },
                 ),
           },
