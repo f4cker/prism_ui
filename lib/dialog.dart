@@ -372,6 +372,9 @@ class AlertDialog extends StatelessWidget {
   /// The last action destroys data: red on the plain fill, as in UIKit.
   final bool destructive;
 
+  /// The alert's width instead of iOS's 348 dp, for content that needs it.
+  final double? width;
+
   const AlertDialog({
     super.key,
     required this.title,
@@ -381,6 +384,7 @@ class AlertDialog extends StatelessWidget {
     this.padding,
     this.hasFields = false,
     this.destructive = false,
+    this.width,
   });
 
   @override
@@ -433,7 +437,7 @@ class AlertDialog extends StatelessWidget {
                     child: Container(
                       constraints: BoxConstraints(
                         maxWidth: padding == null
-                            ? _alertWidth - contentInset * 2
+                            ? (width ?? _alertWidth) - contentInset * 2
                             : _contentMaxWidth,
                       ),
                       width: double.infinity,

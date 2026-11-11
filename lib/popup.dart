@@ -38,6 +38,7 @@ enum PopupPlacement {
   overAnchorStart,
   belowPoint,
   belowAnchorStart,
+  belowAnchorEnd,
 }
 
 const _screenMargin = 16.0;
@@ -1337,10 +1338,15 @@ class _PopupLayoutDelegate extends SingleChildLayoutDelegate {
               anchor.left,
               _yBelowAnchor(childSize.height, insets.top, maxY),
             ),
+            PopupPlacement.belowAnchorEnd => (
+              anchor.right - childSize.width,
+              _yBelowAnchor(childSize.height, insets.top, maxY),
+            ),
           };
     final minY = switch (placement) {
       PopupPlacement.belowPoint ||
-      PopupPlacement.belowAnchorStart => insets.top,
+      PopupPlacement.belowAnchorStart ||
+      PopupPlacement.belowAnchorEnd => insets.top,
       _ => math.max(safeInsets.top, math.min(insets.top, y)),
     };
     final bounds = this.bounds;
@@ -1624,7 +1630,8 @@ class _PopupAnchorState extends State<PopupAnchor> {
       return;
     }
     final returnsIntoSource =
-        widget.placement != PopupPlacement.belowAnchorStart;
+        widget.placement != PopupPlacement.belowAnchorStart &&
+        widget.placement != PopupPlacement.belowAnchorEnd;
     final snapshot = ValueNotifier<ui.Image?>(null);
     final route = _route = AnchoredPopupRoute<void>(
       barrierLabel: UiLocalizations.of(context).close,
@@ -1887,10 +1894,22 @@ class PopupMenuItem {
     this.keepsOpen = false,
     this.section,
     this.subItems = const [],
+    this.leading,
+    this.labelTrailing,
+    this.labelEmphasized = false,
+    this.subtitleMaxLines = 2,
   });
 
   final String label;
   final String? subtitle;
+
+  /// Takes the place of [glyph], such as an avatar.
+  final Widget? leading;
+
+  /// Follows the label on its line, such as a tag.
+  final Widget? labelTrailing;
+  final bool labelEmphasized;
+  final int subtitleMaxLines;
   final Glyph? glyph;
   final VoidCallback? onPressed;
   final bool danger;
@@ -1916,9 +1935,24 @@ const _menuMaxWidth = 280.0;
 const _defaultMaxVisibleItems = 7;
 
 class PopupMenu extends StatefulWidget {
-  const PopupMenu({super.key, required this.items, this.maxVisibleItems});
+  const PopupMenu({
+    super.key,
+    required this.items,
+    this.maxVisibleItems,
+    this.width,
+    this.leadingCheck = false,
+    this.itemPadding,
+  });
 
   final List<PopupMenuItem> items;
+
+  /// The first level's width instead of one between 160 and 280 dp.
+  final double? width;
+
+  /// The check mark leads its row, in a slot every row keeps, as in a list
+  /// of accounts.
+  final bool leadingCheck;
+  final EdgeInsets? itemPadding;
 
   /// Half of the next row shows past these, so the cut tells the menu scrolls.
   /// Setting them builds only the rows in view, which needs rows of one height.
@@ -2162,9 +2196,9 @@ class _PopupMenuState extends State<PopupMenu>
       _MenuLevel(
         items: widget.items,
         top: 0,
-        fromWidth: _menuMinWidth,
-        minWidth: _menuMinWidth,
-        maxWidth: _menuMaxWidth,
+        fromWidth: widget.width ?? _menuMinWidth,
+        minWidth: widget.width ?? _menuMinWidth,
+        maxWidth: widget.width ?? _menuMaxWidth,
       ),
     ];
     for (final step in _path) {
@@ -2442,13 +2476,21 @@ class _PopupMenuState extends State<PopupMenu>
       if (arrowTurns != null) {
         arrow = RotationTransition(turns: arrowTurns, child: arrow);
       }
-    } else if (_isChecked(item)) {
+    } else if (_isChecked(item) && !widget.leadingCheck) {
       arrow = GlyphIcon(
         Glyphs.check,
         size: _submenuArrowSize,
         color: foregroundColor,
       );
     }
+    final label = EmojiText(
+      item.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppTextStyle.subheadline
+          .of(context, emphasized: item.labelEmphasized)
+          .copyWith(color: foregroundColor),
+    );
     // A press is the menu's to follow across the rows, so the row's own ink
     // only shows hover and focus.
     final child = PressRegion(
@@ -2466,10 +2508,28 @@ class _PopupMenuState extends State<PopupMenu>
           shape: AppShape.all(_itemRadius),
         ),
         child: Padding(
-          padding: arrow != null ? _itemArrowPadding : _itemPadding,
+          padding:
+              widget.itemPadding ??
+              (arrow != null ? _itemArrowPadding : _itemPadding),
           child: Row(
             children: [
-              if (item.glyph case final glyph?) ...[
+              if (widget.leadingCheck) ...[
+                SizedBox.square(
+                  dimension: _submenuArrowSize,
+                  child: _isChecked(item)
+                      ? GlyphIcon(
+                          Glyphs.check,
+                          size: _submenuArrowSize,
+                          color: foregroundColor,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+              ],
+              if (item.leading case final leading?) ...[
+                leading,
+                const SizedBox(width: 10),
+              ] else if (item.glyph case final glyph?) ...[
                 GlyphIcon(glyph, size: _itemIconSize, color: foregroundColor),
                 const SizedBox(width: 12),
               ],
@@ -2478,18 +2538,20 @@ class _PopupMenuState extends State<PopupMenu>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    EmojiText(
-                      item.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyle.subheadline
-                          .of(context)
-                          .copyWith(color: foregroundColor),
-                    ),
+                    if (item.labelTrailing case final trailing?)
+                      Row(
+                        spacing: 6,
+                        children: [
+                          Flexible(child: label),
+                          trailing,
+                        ],
+                      )
+                    else
+                      label,
                     if (item.subtitle case final subtitle?)
                       EmojiText(
                         subtitle,
-                        maxLines: 2,
+                        maxLines: item.subtitleMaxLines,
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyle.footnote
                             .of(context)
