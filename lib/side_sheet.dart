@@ -22,12 +22,71 @@ double _widthFor(double viewWidth) {
   return (viewWidth * _widthFactor).clamp(_minWidth, _maxWidth);
 }
 
+const Duration _floatingEnterDuration = Duration(milliseconds: 200);
+const Duration _floatingExitDuration = Duration(milliseconds: 160);
+const Duration _reducedMotionDuration = Duration(milliseconds: 120);
+const double _floatingInset = 12;
+const double _floatingInsetShort = 8;
+const double _shortViewHeight = 480;
+const double _pageLeftVisible = 320;
+const double _narrowPageMargin = 56;
+const double _floatingSlide = 24;
+
+/// Where the sheet sits in a view: a panel floating [inset] off the top,
+/// trailing and bottom edges, or flush with them when the view is too narrow
+/// to leave a page beside a floating panel at least [_minWidth] wide.
+@immutable
+class SideSheetGeometry {
+  const SideSheetGeometry._({required this.width, required this.inset});
+
+  factory SideSheetGeometry.of(Size view) {
+    final width = _widthFor(view.width);
+    final inset = view.height < _shortViewHeight
+        ? _floatingInsetShort
+        : _floatingInset;
+    if (view.width >= width + inset * 2 + _pageLeftVisible) {
+      return SideSheetGeometry._(width: width, inset: inset);
+    }
+    final narrowed = math.min(
+      width,
+      view.width - inset * 2 - _narrowPageMargin,
+    );
+    if (narrowed < _minWidth) {
+      return SideSheetGeometry._(width: width, inset: 0);
+    }
+    return SideSheetGeometry._(width: narrowed, inset: inset);
+  }
+
+  final double width;
+  final double inset;
+
+  bool get floating => inset > 0;
+}
+
+List<BoxShadow> _floatingShadows(Brightness brightness) => switch (brightness) {
+  Brightness.light => const [
+    BoxShadow(color: Color(0x24000000), blurRadius: 32, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x0F000000), blurRadius: 4, offset: Offset(0, 1)),
+  ],
+  Brightness.dark => const [
+    BoxShadow(color: Color(0x66000000), blurRadius: 32, offset: Offset(0, 8)),
+  ],
+};
+
 class SideSheet extends StatefulWidget {
-  const SideSheet({super.key, this.backgroundColor, required this.builder});
+  const SideSheet({
+    super.key,
+    this.backgroundColor,
+    this.floating = false,
+    required this.builder,
+  });
 
   final WidgetBuilder builder;
 
   final Color? backgroundColor;
+
+  /// Rounds every corner and casts a shadow, for a panel off the view's edges.
+  final bool floating;
 
   @override
   State<SideSheet> createState() => _SideSheetState();
@@ -47,13 +106,24 @@ class _SideSheetState extends State<SideSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Surface(
+    final colorScheme = Theme.of(context).colorScheme;
+    final shape = widget.floating ? AppShape.xl : AppShape.none;
+    final surface = Surface(
       key: _childKey,
-      color:
-          widget.backgroundColor ??
-          SurfaceLevel.page.colorOf(Theme.of(context).colorScheme),
-      shape: AppShape.none,
+      color: widget.backgroundColor ?? SurfaceLevel.page.colorOf(colorScheme),
+      shape: shape,
+      clipBehavior: widget.floating ? Clip.antiAlias : Clip.none,
       child: widget.builder(context),
+    );
+    if (!widget.floating) {
+      return surface;
+    }
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: shape,
+        shadows: _floatingShadows(colorScheme.brightness),
+      ),
+      child: surface,
     );
   }
 }
@@ -63,13 +133,15 @@ typedef _SizeChangeCallback<Size> = void Function(Size);
 class _SideSheetLayoutWithSizeListener extends SingleChildRenderObjectWidget {
   const _SideSheetLayoutWithSizeListener({
     required this.onChildSizeChanged,
-    required this.animationValue,
+    required this.shift,
+    required this.inset,
     required this.width,
     super.child,
   });
 
   final _SizeChangeCallback<Size> onChildSizeChanged;
-  final double animationValue;
+  final double shift;
+  final double inset;
   final double width;
 
   @override
@@ -78,7 +150,8 @@ class _SideSheetLayoutWithSizeListener extends SingleChildRenderObjectWidget {
   ) {
     return _RenderSideSheetLayoutWithSizeListener(
       onChildSizeChanged: onChildSizeChanged,
-      animationValue: animationValue,
+      shift: shift,
+      inset: inset,
       width: width,
     );
   }
@@ -89,7 +162,8 @@ class _SideSheetLayoutWithSizeListener extends SingleChildRenderObjectWidget {
     _RenderSideSheetLayoutWithSizeListener renderObject,
   ) {
     renderObject.onChildSizeChanged = onChildSizeChanged;
-    renderObject.animationValue = animationValue;
+    renderObject.shift = shift;
+    renderObject.inset = inset;
     renderObject.width = width;
   }
 }
@@ -98,10 +172,12 @@ class _RenderSideSheetLayoutWithSizeListener extends RenderShiftedBox {
   _RenderSideSheetLayoutWithSizeListener({
     RenderBox? child,
     required _SizeChangeCallback<Size> onChildSizeChanged,
-    required double animationValue,
+    required double shift,
+    required double inset,
     required double width,
   }) : _onChildSizeChanged = onChildSizeChanged,
-       _animationValue = animationValue,
+       _shift = shift,
+       _inset = inset,
        _width = width,
        super(child);
 
@@ -119,15 +195,28 @@ class _RenderSideSheetLayoutWithSizeListener extends RenderShiftedBox {
     markNeedsLayout();
   }
 
-  double get animationValue => _animationValue;
-  double _animationValue;
+  /// How far right of its resting place the sheet is drawn.
+  double get shift => _shift;
+  double _shift;
 
-  set animationValue(double newValue) {
-    if (_animationValue == newValue) {
+  set shift(double newValue) {
+    if (_shift == newValue) {
       return;
     }
 
-    _animationValue = newValue;
+    _shift = newValue;
+    markNeedsLayout();
+  }
+
+  double get inset => _inset;
+  double _inset;
+
+  set inset(double newValue) {
+    if (_inset == newValue) {
+      return;
+    }
+
+    _inset = newValue;
     markNeedsLayout();
   }
 
@@ -198,13 +287,13 @@ class _RenderSideSheetLayoutWithSizeListener extends RenderShiftedBox {
 
   BoxConstraints _getConstraintsForChild(BoxConstraints constraints) {
     return BoxConstraints.tightFor(
-      width: math.min(width, constraints.maxWidth),
-      height: constraints.maxHeight,
+      width: math.min(width, constraints.maxWidth - inset * 2),
+      height: math.max(constraints.maxHeight - inset * 2, 0),
     );
   }
 
   Offset _getPositionForChild(Size size, Size childSize) {
-    return Offset(size.width - childSize.width * animationValue, 0.0);
+    return Offset(size.width - inset - childSize.width + shift, inset);
   }
 
   @override
@@ -247,6 +336,18 @@ class _ModalSideSheet<T> extends StatefulWidget {
 }
 
 class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
+  late final CurvedAnimation _floatingCurve = CurvedAnimation(
+    parent: widget.route.animation!,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  @override
+  void dispose() {
+    _floatingCurve.dispose();
+    super.dispose();
+  }
+
   String _getRouteLabel(UiLocalizations localizations) {
     switch (Theme.of(context).platform) {
       case TargetPlatform.iOS:
@@ -260,8 +361,8 @@ class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
     }
   }
 
-  EdgeInsets _getNewClipDetails(Size topLayerSize) {
-    return EdgeInsets.fromLTRB(0, 0, topLayerSize.width, 0);
+  EdgeInsets _getNewClipDetails(Size topLayerSize, double inset) {
+    return EdgeInsets.fromLTRB(0, 0, topLayerSize.width + inset, 0);
   }
 
   @override
@@ -269,7 +370,10 @@ class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
     assert(debugCheckHasMediaQuery(context));
     final localizations = UiLocalizations.of(context);
     final String routeLabel = _getRouteLabel(localizations);
-    final width = _widthFor(MediaQuery.sizeOf(context).width);
+    final geometry = SideSheetGeometry.of(MediaQuery.sizeOf(context));
+    final width = geometry.width;
+    final inset = geometry.inset;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     final route = widget.route;
     return AnimatedBuilder(
@@ -278,11 +382,23 @@ class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
         SideSheet(
           builder: route.builder,
           backgroundColor: widget.backgroundColor,
+          floating: geometry.floating,
         ),
       ),
       builder: (BuildContext context, Widget? child) {
-        final curve = route.isDragBackActive ? Curves.linear : _sideSheetCurve;
-        final double animationValue = curve.transform(route.animation!.value);
+        final value = route.animation!.value;
+        var shift = 0.0;
+        var opacity = 1.0;
+        if (route.isDragBackActive) {
+          shift = (width + inset) * (1 - value);
+        } else if (!geometry.floating) {
+          shift = width * (1 - _sideSheetCurve.transform(value));
+        } else {
+          opacity = _floatingCurve.value;
+          if (!reduceMotion) {
+            shift = _floatingSlide * (1 - opacity);
+          }
+        }
         return Semantics(
           scopesRoute: true,
           namesRoute: true,
@@ -292,12 +408,13 @@ class _ModalSideSheetState<T> extends State<_ModalSideSheet<T>> {
             child: _SideSheetLayoutWithSizeListener(
               onChildSizeChanged: (Size size) {
                 widget.route._didChangeBarrierSemanticsClip(
-                  _getNewClipDetails(size),
+                  _getNewClipDetails(size, inset),
                 );
               },
-              animationValue: animationValue,
+              shift: shift,
+              inset: inset,
               width: width,
-              child: child,
+              child: Opacity(opacity: opacity, child: child),
             ),
           ),
         );
@@ -342,10 +459,24 @@ class ModalSideSheetRoute<T> extends PopupRoute<T>
   }
 
   @override
-  Duration get transitionDuration => _sideSheetEnterDuration;
+  Duration get transitionDuration => _durations.enter;
 
   @override
-  Duration get reverseTransitionDuration => _sideSheetExitDuration;
+  Duration get reverseTransitionDuration => _durations.exit;
+
+  /// A floating panel's motion is shorter, and only a fade when the platform
+  /// asks for reduced motion; a flush sheet keeps its slide.
+  ({Duration enter, Duration exit}) get _durations {
+    final context = navigator?.context;
+    final view = context == null ? null : MediaQuery.maybeOf(context);
+    if (view == null || !SideSheetGeometry.of(view.size).floating) {
+      return (enter: _sideSheetEnterDuration, exit: _sideSheetExitDuration);
+    }
+    if (view.disableAnimations) {
+      return (enter: _reducedMotionDuration, exit: _reducedMotionDuration);
+    }
+    return (enter: _floatingEnterDuration, exit: _floatingExitDuration);
+  }
 
   @override
   bool get barrierDismissible => true;
@@ -358,7 +489,14 @@ class ModalSideSheetRoute<T> extends PopupRoute<T>
 
   @override
   AnimationController createAnimationController() {
-    return SideSheet.createAnimationController(navigator!);
+    final durations = _durations;
+    return AnimationController(
+      duration: durations.enter,
+      reverseDuration: durations.exit,
+      debugLabel: 'SideSheet',
+      vsync: navigator!,
+      animationBehavior: AnimationBehavior.preserve,
+    );
   }
 
   @override
