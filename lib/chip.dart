@@ -12,6 +12,9 @@ import 'package:prism_ui/typography.dart';
 
 class Chip extends StatelessWidget {
   final String label;
+
+  /// A small glyph ahead of [label], in the primary color.
+  final Glyph? glyph;
   final VoidCallback? onDeleted;
 
   final VoidCallback? onPressed;
@@ -20,6 +23,7 @@ class Chip extends StatelessWidget {
   const Chip({
     super.key,
     required this.label,
+    this.glyph,
     this.onDeleted,
     this.onPressed,
     this.selected = false,
@@ -28,6 +32,7 @@ class Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = context.colorScheme;
+    final glyph = this.glyph;
     final deletable = onDeleted != null;
     final filled = selected && !deletable;
     return SizedBox(
@@ -43,6 +48,12 @@ class Chip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           spacing: 6,
           children: [
+            if (glyph != null)
+              GlyphIcon(
+                glyph,
+                size: 12,
+                color: filled ? colorScheme.onPrimary : colorScheme.primary,
+              ),
             Flexible(
               child: Text(
                 label,

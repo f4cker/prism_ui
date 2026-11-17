@@ -12,6 +12,7 @@ class Tooltip extends StatelessWidget {
     this.preferBelow = true,
     this.triggerMode = TooltipTriggerMode.longPress,
     this.excludeFromSemantics = false,
+    this.hoverDelay,
     required this.child,
   });
 
@@ -19,6 +20,10 @@ class Tooltip extends StatelessWidget {
   final bool preferBelow;
   final TooltipTriggerMode triggerMode;
   final bool excludeFromSemantics;
+
+  /// How long a pointer rests on [child] before the message shows; none by
+  /// default.
+  final Duration? hoverDelay;
   final Widget child;
 
   static const _verticalOffset = 24.0;
@@ -29,6 +34,7 @@ class Tooltip extends StatelessWidget {
       return child;
     }
     return RawTooltip(
+      hoverDelay: hoverDelay ?? Duration.zero,
       semanticsTooltip: excludeFromSemantics ? null : message,
       tooltipBuilder: (context, animation) => FadeTransition(
         opacity: animation,
