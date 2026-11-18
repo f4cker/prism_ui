@@ -151,6 +151,9 @@ class PrismScaffold extends StatelessWidget {
                                   blurSigma: barBlurSigma,
                                   fadeStart: 1,
                                   overhang: barFadeExtent,
+                                  overhangPresence: _BandPresenceScope.of(
+                                    context,
+                                  ),
                                   child: const SizedBox(width: double.infinity),
                                 ),
                               ),
@@ -179,39 +182,41 @@ class PrismScaffold extends StatelessWidget {
         : bodyLayer;
     if (!isCompact) {
       final headerBuilder = this.headerBuilder;
-      return _ScaffoldFrame(
-        // A header holds the body below the bar, so nothing scrolls under
-        // it: the bar drops the band its blur eases out over, which would
-        // only blur the header.
-        bar: headerBuilder == null
-            ? bar
-            : PreferredSize(
-                preferredSize: bar.preferredSize,
-                child: ListenableBuilder(
-                  listenable: headerListenable ?? _noChange,
-                  builder: (context, child) => _BarFadeScope(
-                    fades: headerBuilder(context) == null,
-                    child: child!,
+      return _BandPresence(
+        child: _ScaffoldFrame(
+          // A header holds the body below the bar, so nothing scrolls under
+          // it: the bar drops the band its blur eases out over, which would
+          // only blur the header.
+          bar: headerBuilder == null
+              ? bar
+              : PreferredSize(
+                  preferredSize: bar.preferredSize,
+                  child: ListenableBuilder(
+                    listenable: headerListenable ?? _noChange,
+                    builder: (context, child) => _BarFadeScope(
+                      fades: headerBuilder(context) == null,
+                      child: child!,
+                    ),
+                    child: bar,
                   ),
-                  child: bar,
                 ),
-              ),
-        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-        backgroundColor: backgroundColor,
-        body: _BodyScope(
-          child: foot == null
-              ? content
-              : Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    content,
-                    if (!footHidden)
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: BarItemPresence.foot(child: foot),
-                      ),
-                  ],
-                ),
+          resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+          backgroundColor: backgroundColor,
+          body: _BodyScope(
+            child: foot == null
+                ? content
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      content,
+                      if (!footHidden)
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: BarItemPresence.foot(child: foot),
+                        ),
+                    ],
+                  ),
+          ),
         ),
       );
     }
@@ -295,6 +300,7 @@ class ScaffoldBar extends StatelessWidget implements PreferredSizeWidget {
       // over the overhang past its foot.
       fadeStart: 1,
       overhang: _BarFadeScope.fadesOf(context) ? barFadeExtent : 0,
+      overhangPresence: _BandPresenceScope.of(context),
       child: _WindowControlsClearance(child: bar),
     );
   }
@@ -491,6 +497,65 @@ const double appBarActionSpace = 4;
 
 const double barButtonGap = 8;
 const double _iconButtonTapPadding = 4;
+
+/// How much of the band past the bar's (or a header's) foot shows: none
+/// over a list at its top, all of it once [barFadeExtent] has scrolled
+/// under. At rest the band would blur and shade the first row.
+class _BandPresence extends StatefulWidget {
+  const _BandPresence({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_BandPresence> createState() => _BandPresenceState();
+}
+
+class _BandPresenceState extends State<_BandPresence> {
+  final _presence = ValueNotifier<double>(0);
+
+  // The page's own list: the outermost vertical one. A field or a box
+  // scrolling inside it says nothing of what is under the bar.
+  int? _depth;
+
+  bool _onMetrics(ScrollMetrics metrics, int depth) {
+    if (metrics.axis != Axis.vertical) return false;
+    final known = _depth;
+    if (known != null && depth > known) return false;
+    _depth = depth;
+    _presence.value = clampDouble(metrics.extentBefore / barFadeExtent, 0, 1);
+    return false;
+  }
+
+  @override
+  void dispose() {
+    _presence.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (n) => _onMetrics(n.metrics, n.depth),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) => _onMetrics(n.metrics, n.depth),
+        child: _BandPresenceScope(presence: _presence, child: widget.child),
+      ),
+    );
+  }
+}
+
+class _BandPresenceScope extends InheritedWidget {
+  const _BandPresenceScope({required this.presence, required super.child});
+
+  final ValueListenable<double> presence;
+
+  static ValueListenable<double>? of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_BandPresenceScope>()?.presence;
+
+  @override
+  bool updateShouldNotify(_BandPresenceScope oldWidget) =>
+      presence != oldWidget.presence;
+}
 
 /// Whether a page bar eases its blur out past its foot: not over a header.
 class _BarFadeScope extends InheritedWidget {
