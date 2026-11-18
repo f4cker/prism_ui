@@ -22,6 +22,11 @@ const _hazeSample = 10;
 const _hazeShare = 18;
 const _veilColor = 19;
 const _noHaze = <double>[0, 0, 1, 1, 0, 0, 0, 0];
+// While what lies behind a pane changes frame after frame (an animation under
+// glass), its capture is drawn again at most this often; the frames between
+// reuse the last one. A first change after a still frame is drawn at once, and
+// the last one of a run within this time.
+const Duration _animatedRecapture = Duration(microseconds: 1000000 ~/ 30);
 
 typedef LiquidGlassCapture = ({
   int snapshots,
@@ -57,6 +62,11 @@ class LiquidGlassHost extends StatelessWidget {
 
   @visibleForTesting
   static int debugCaptures = 0;
+
+  /// Frames whose capture was not drawn again although what lies behind
+  /// changed, because it changed on the frame before too (an animation).
+  @visibleForTesting
+  static int debugThrottled = 0;
 
   @visibleForTesting
   static bool? debugCarryBandsOverride;
@@ -386,6 +396,11 @@ class _LiquidGlassHostLayer extends ContainerLayer {
 
   final _atlases = <({ui.Image image, List<_Band> bands})>[];
 
+  // Per level: when its atlas was last drawn, and for how many frames in a row
+  // only what lies behind its panes changed.
+  final _drawnAt = <Duration>[];
+  final _changedRun = <int>[];
+
   // A pane that leaves the tree but lives on, as under a route that covers it,
   // would hold the atlas it last drew from until it painted again.
   var _panes = <_LiquidGlassLayer>{};
@@ -480,6 +495,10 @@ class _LiquidGlassHostLayer extends ContainerLayer {
     }
     while (_atlases.length > levels) {
       _atlases.removeLast().image.dispose();
+    }
+    if (_drawnAt.length > levels) {
+      _drawnAt.length = levels;
+      _changedRun.length = levels;
     }
     assert(() {
       LiquidGlassHost.debugCaptures++;
@@ -668,6 +687,7 @@ class _LiquidGlassHostLayer extends ContainerLayer {
       final rect = Rect.fromLTWH(0, top, step(width), step(bottom));
       final sigma = entries.first.blurSigma;
       final drawn = <Object?>[sigma, rect.size];
+      final layout = <Object?>[sigma, rect.size];
       final recorder = ui.PictureRecorder();
       // Impeller scales a wide blur to what its layer covers (architecture.md).
       final canvas = Canvas(recorder)
@@ -683,6 +703,10 @@ class _LiquidGlassHostLayer extends ContainerLayer {
           ..add(place)
           ..add(entry.slot)
           ..addAll(entry.rootToHost.storage);
+        layout
+          ..add(place)
+          ..add(entry.slot)
+          ..addAll(entry.rootToHost.storage);
         canvas
           ..save()
           ..clipRect(place)
@@ -693,7 +717,7 @@ class _LiquidGlassHostLayer extends ContainerLayer {
         entry.veil = _Replay(canvas, drawn, entry).run();
         canvas.restore();
       }
-      bands.add((rect: rect, sigma: sigma, drawn: drawn));
+      bands.add((rect: rect, sigma: sigma, drawn: drawn, layout: layout));
       pictures.add(recorder.endRecording());
       top = rect.bottom;
     }
@@ -703,20 +727,48 @@ class _LiquidGlassHostLayer extends ContainerLayer {
     );
     final previous = level < _atlases.length ? _atlases[level] : null;
     final last = previous?.bands ?? const <_Band>[];
-    if (previous != null &&
+    final sameLayout =
+        previous != null &&
         previous.image.width == size.width &&
         previous.image.height == size.height &&
         last.length == bands.length &&
         bands.indexed.every(
           (band) =>
               band.$2.rect == last[band.$1].rect &&
-              listEquals(band.$2.drawn, last[band.$1].drawn),
-        )) {
+              listEquals(band.$2.layout, last[band.$1].layout),
+        );
+    final now = SchedulerBinding.instance.currentSystemFrameTimeStamp;
+    while (_drawnAt.length <= level) {
+      _drawnAt.add(Duration.zero);
+      _changedRun.add(0);
+    }
+    final unchanged =
+        sameLayout &&
+        bands.indexed.every(
+          (band) => listEquals(band.$2.drawn, last[band.$1].drawn),
+        );
+    _changedRun[level] = sameLayout && !unchanged ? _changedRun[level] + 1 : 0;
+    // Unchanged; or only the content behind changed, again, sooner than the
+    // animated rate: the panes keep their last capture. A frame follows, so
+    // the content the run ends on is still drawn.
+    final throttled =
+        _changedRun[level] > 1 &&
+        now >= _drawnAt[level] &&
+        now - _drawnAt[level] < _animatedRecapture;
+    if (unchanged || throttled) {
       for (final picture in pictures) {
         picture.dispose();
       }
-      return (atlas: previous.image, taken: false, kept: 0);
+      if (throttled) {
+        assert(() {
+          LiquidGlassHost.debugThrottled++;
+          return true;
+        }());
+        SchedulerBinding.instance.scheduleFrame();
+      }
+      return (atlas: previous!.image, taken: false, kept: 0);
     }
+    _drawnAt[level] = now;
     // Skia keeps what an image was drawn from for as long as the image lives,
     // so a capture copied from the last would hold every one before it.
     final carry =
@@ -839,7 +891,13 @@ typedef _Placement = ({
   double blurSigma,
 });
 
-typedef _Band = ({Rect rect, double sigma, List<Object?> drawn});
+// `layout` is where `drawn` puts its slots, without what they show.
+typedef _Band = ({
+  Rect rect,
+  double sigma,
+  List<Object?> drawn,
+  List<Object?> layout,
+});
 
 bool _encloses(Rect outer, Rect inner) =>
     outer.left <= inner.left &&

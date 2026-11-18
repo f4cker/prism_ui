@@ -1,4 +1,5 @@
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prism_ui/prism_ui.dart';
@@ -71,6 +72,77 @@ void main() {
     await tester.pumpWidget(line(disableAnimations: true));
     await tester.pumpAndSettle();
 
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('rests after its pulse budget instead of asking for frames '
+      'forever', (tester) async {
+    await tester.pumpWidget(line());
+    await tester.pump(const Duration(seconds: 5));
+    expect(tester.hasRunningAnimations, isTrue);
+    // The budget ends the cycle it is in, at full opacity, and then holds.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.hasRunningAnimations, isFalse);
+    expect(SchedulerBinding.instance.hasScheduledFrame, isFalse);
+    final opacity = tester
+        .widget<FadeTransition>(
+          find.descendant(
+            of: find.byType(SkeletonText),
+            matching: find.byType(FadeTransition),
+          ),
+        )
+        .opacity;
+    expect(opacity.value, closeTo(1, 1e-9));
+    // Still at rest after the dependencies change (theme, media query).
+    await tester.pumpWidget(line());
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('counts its budget only while tickers run, and starts over '
+      'when they come back', (tester) async {
+    Widget held(bool enabled) =>
+        TickerMode(enabled: enabled, child: line());
+    // Held still far longer than the budget (the Core down, a card muting it).
+    await tester.pumpWidget(held(false));
+    await tester.pump(const Duration(seconds: 30));
+    expect(tester.hasRunningAnimations, isFalse);
+    // A real wait begins: the same bar pulses for a whole budget.
+    await tester.pumpWidget(held(true));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pump(const Duration(seconds: 9));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.hasRunningAnimations, isFalse);
+    // Rested; muted and on again: a fresh budget once more.
+    await tester.pumpWidget(held(false));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(held(true));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pump(const Duration(seconds: 5));
+    expect(tester.hasRunningAnimations, isTrue);
+    // Muted half way: nothing is spent while muted, and it starts over.
+    await tester.pumpWidget(held(false));
+    await tester.pump(const Duration(seconds: 20));
+    await tester.pumpWidget(held(true));
+    await tester.pump(const Duration(seconds: 9));
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('asks for no frames where tickers are off', (tester) async {
+    await tester.pumpWidget(TickerMode(enabled: false, child: line()));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(SchedulerBinding.instance.hasScheduledFrame, isFalse);
     expect(tester.hasRunningAnimations, isFalse);
   });
 }

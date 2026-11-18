@@ -223,6 +223,57 @@ void main() {
     expect(await _behind(tester, pane, const Offset(200, 150)), _green);
   });
 
+  testWidgets('an animation behind a pane is captured at most 30 times a '
+      'second, and where it ends', (tester) async {
+    final shade = ValueNotifier<Color>(_red);
+    addTearDown(shade.dispose);
+    await tester.pumpWidget(
+      _app(
+        Stack(
+          children: [
+            Positioned.fill(
+              child: ValueListenableBuilder<Color>(
+                valueListenable: shade,
+                builder: (_, color, _) => ColoredBox(color: color),
+              ),
+            ),
+            _pane(const Rect.fromLTWH(100, 100, 200, 100)),
+          ],
+        ),
+      ),
+    );
+    expect(_capture().snapshots, 1);
+    // One change after a still frame is drawn at once.
+    shade.value = _green;
+    await tester.pump(const Duration(milliseconds: 8));
+    expect(_capture().snapshots, 1);
+    expect(
+      await _behind(tester, _capture().panes.single, const Offset(200, 150)),
+      _green,
+    );
+    // A second of 120 Hz frames that each change it.
+    final throttled = LiquidGlassHost.debugThrottled;
+    var snapshots = 0;
+    for (var frame = 0; frame < 120; frame++) {
+      shade.value = Color.fromARGB(255, frame, 255 - frame, 0);
+      await tester.pump(const Duration(milliseconds: 8));
+      snapshots += _capture().snapshots;
+    }
+    expect(snapshots, inInclusiveRange(25, 31));
+    expect(LiquidGlassHost.debugThrottled - throttled, 120 - snapshots);
+    // It stops on a frame that was not drawn: the frames that follow by
+    // themselves draw it.
+    shade.value = _blue;
+    await tester.pump(const Duration(milliseconds: 8));
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    await tester.pumpAndSettle();
+    expect(
+      await _behind(tester, _capture().panes.single, const Offset(200, 150)),
+      _blue,
+    );
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
   testWidgets('a pane moving within its hold keeps one capture', (
     tester,
   ) async {
