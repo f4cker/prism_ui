@@ -12,12 +12,20 @@ class SegmentedControl<T> extends StatelessWidget {
     required this.segments,
     required this.value,
     required this.onChanged,
+    this.dense = false,
   });
 
   static const double _height = 44;
   static const double _inset = 4;
+  static const double _denseHeight = 26;
+  static const double _denseInset = 2;
+  static const double _densePadding = 10;
 
   final List<(T, String)> segments;
+
+  /// A small control for a section title's end: 26 tall, 12-point labels
+  /// 10 in from each segment's sides, as wide as its labels need.
+  final bool dense;
   final T value;
   final ValueChanged<T> onChanged;
 
@@ -26,9 +34,9 @@ class SegmentedControl<T> extends StatelessWidget {
     final colorScheme = context.colorScheme;
     final count = segments.length;
     final index = segments.indexWhere((segment) => segment.$1 == value);
-    return Container(
-      height: _height,
-      padding: const EdgeInsets.all(_inset),
+    final control = Container(
+      height: dense ? _denseHeight : _height,
+      padding: EdgeInsets.all(dense ? _denseInset : _inset),
       decoration: ShapeDecoration(
         color: context.raisedSurfaceLevel.colorOf(colorScheme),
         shape: AppShape.full,
@@ -69,20 +77,28 @@ class SegmentedControl<T> extends StatelessWidget {
                     onPressed: option == value
                         ? () {}
                         : () => onChanged(option),
-                    child: Center(
-                      child: AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 200),
-                        style: AppTextStyle.subheadline
-                            .of(context, emphasized: option == value)
-                            .copyWith(
-                              color: option == value
-                                  ? colorScheme.onPrimary
-                                  : colorScheme.onSurfaceVariant,
-                            ),
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: dense ? _densePadding : 0,
+                      ),
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style:
+                              (dense
+                                      ? AppTextStyle.caption1
+                                      : AppTextStyle.subheadline)
+                                  .of(context, emphasized: option == value)
+                                  .copyWith(
+                                    color: option == value
+                                        ? colorScheme.onPrimary
+                                        : colorScheme.onSurfaceVariant,
+                                  ),
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                     ),
@@ -93,5 +109,6 @@ class SegmentedControl<T> extends StatelessWidget {
         ],
       ),
     );
+    return dense ? IntrinsicWidth(child: control) : control;
   }
 }
