@@ -380,4 +380,193 @@ void main() {
       expect(find.text('Proxies'), findsOneWidget);
     });
   });
+
+  group('sections', () {
+    const red = Color(0xFFB3261E);
+    const amber = Color(0xFFB25E00);
+    const grouped = [
+      SidebarDestination(glyph: Glyphs.pin, label: 'Dashboard'),
+      SidebarDestination(
+        glyph: Glyphs.search,
+        label: 'Rules',
+        badge: SidebarBadge(count: 2, semanticLabel: '2 updates'),
+      ),
+      SidebarDestination(
+        glyph: Glyphs.sort,
+        label: 'Rewrite',
+        badge: SidebarBadge(count: 1, error: true, semanticLabel: 'Errors'),
+      ),
+      SidebarDestination(
+        glyph: Glyphs.copy,
+        label: 'Scripts',
+        badge: SidebarBadge(count: 3),
+      ),
+      SidebarDestination(glyph: Glyphs.check, label: 'Tools'),
+    ];
+
+    Widget sectioned({
+      bool expanded = true,
+      bool closed = false,
+      int selectedIndex = 0,
+      VoidCallback? onToggleSection,
+    }) => TestApp(
+      child: HostScaffold(
+        body: Row(
+          children: [
+            SizedBox(
+              height: 600,
+              child: NavigationSidebar(
+                destinations: grouped,
+                selectedIndex: selectedIndex,
+                expanded: expanded,
+                onSelected: (_) {},
+                pinnedCount: 1,
+                sections: [
+                  const SidebarSection(length: 1),
+                  const SidebarSection(title: 'Routing', length: 1),
+                  SidebarSection(
+                    title: 'Decryption',
+                    length: 2,
+                    collapsed: closed,
+                    onToggle: onToggleSection,
+                    semanticLabel: closed
+                        ? 'Decryption, collapsed'
+                        : 'Decryption, expanded',
+                  ),
+                ],
+              ),
+            ),
+            const Expanded(child: SizedBox.expand()),
+          ],
+        ),
+      ),
+    );
+
+    Finder dots(Color color) => find.byWidgetPredicate(
+      (widget) =>
+          widget is DecoratedBox &&
+          widget.decoration is ShapeDecoration &&
+          (widget.decoration as ShapeDecoration).color == color &&
+          (widget.decoration as ShapeDecoration).shape is CircleBorder,
+    );
+
+    bool reachable(String label) =>
+        find.text(label).hitTestable().evaluate().isNotEmpty;
+
+    testWidgets('titles each section and pins the last rows to the foot', (
+      tester,
+    ) async {
+      await tester.pumpWidget(sectioned());
+
+      expect(find.text('Routing'), findsOneWidget);
+      expect(find.text('Decryption'), findsOneWidget);
+      final rules = tester.getTopLeft(find.text('Rules')).dy;
+      expect(rules, greaterThan(tester.getTopLeft(find.text('Routing')).dy));
+      expect(
+        tester.getTopLeft(find.text('Tools')).dy,
+        greaterThan(tester.getTopLeft(find.text('Scripts')).dy),
+      );
+      // The foot sits at the bottom of the pane, not after the list.
+      expect(tester.getBottomLeft(find.text('Tools')).dy, greaterThan(520));
+    });
+
+    testWidgets('a row shows its count, or a red dot over it', (tester) async {
+      await tester.pumpWidget(sectioned());
+
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+      // Rewrite has both: only the error shows.
+      expect(find.text('1'), findsNothing);
+      expect(dots(red), findsOneWidget);
+    });
+
+    testWidgets('a closed section hides its rows and sums their badges', (
+      tester,
+    ) async {
+      var toggles = 0;
+      await tester.pumpWidget(sectioned(onToggleSection: () => toggles++));
+
+      await tester.tap(find.text('Decryption'));
+      expect(toggles, 1);
+
+      await tester.pumpWidget(sectioned(closed: true));
+      await tester.pump(const Duration(milliseconds: 110));
+      // Halfway through, the rows are partly cut off.
+      expect(reachable('Rewrite'), isTrue);
+      await tester.pumpAndSettle();
+
+      expect(reachable('Rewrite'), isFalse);
+      expect(reachable('Scripts'), isFalse);
+      expect(reachable('Rules'), isTrue);
+      // The heading carries an error from any row over the counts.
+      expect(dots(red).hitTestable(), findsOneWidget);
+      expect(find.text('3').hitTestable(), findsNothing);
+      expect(
+        tester.getCenter(dots(red).hitTestable()).dy,
+        closeTo(tester.getCenter(find.text('Decryption')).dy, 1),
+      );
+      expect(
+        tester.getTopLeft(find.text('Tools')).dy,
+        greaterThan(tester.getTopLeft(find.text('Decryption')).dy),
+      );
+    });
+
+    testWidgets('the merged badge sums counts when nothing failed', (
+      tester,
+    ) async {
+      expect(
+        SidebarBadge.merge(const [
+          SidebarBadge(count: 2),
+          null,
+          SidebarBadge(count: 3),
+        ]),
+        const SidebarBadge(count: 5),
+      );
+      expect(
+        SidebarBadge.merge(const [
+          SidebarBadge(count: 2),
+          SidebarBadge(error: true),
+        ])?.error,
+        isTrue,
+      );
+      expect(SidebarBadge.merge(const [SidebarBadge(), null]), isNull);
+    });
+
+    testWidgets('the heading reads its state and toggles for a screen reader', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      var toggles = 0;
+      await tester.pumpWidget(sectioned(onToggleSection: () => toggles++));
+
+      final heading = find.semantics.byLabel('Decryption, expanded');
+      expect(heading, findsOne);
+      tester.semantics.tap(heading);
+      expect(toggles, 1);
+      semantics.dispose();
+    });
+
+    testWidgets('narrowed, a rule stands for each title and every row shows', (
+      tester,
+    ) async {
+      await tester.pumpWidget(sectioned(expanded: false, closed: true));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Decryption'), findsNothing);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is SizedBox && widget.width == 16 && widget.height == 1,
+        ),
+        findsNWidgets(2),
+      );
+      // Rows stay within reach; badges turn into dots on their icons.
+      final scripts = find.byWidgetPredicate(
+        (widget) => widget is AnimatedGlyph && widget.glyph == Glyphs.copy,
+      );
+      expect(scripts.hitTestable(), findsOneWidget);
+      expect(dots(amber), findsNWidgets(2));
+      expect(dots(red), findsOneWidget);
+    });
+  });
 }
