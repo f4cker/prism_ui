@@ -383,7 +383,6 @@ void main() {
 
   group('sections', () {
     const red = Color(0xFFB3261E);
-    const amber = Color(0xFFB25E00);
     const grouped = [
       SidebarDestination(glyph: Glyphs.pin, label: 'Dashboard'),
       SidebarDestination(
@@ -511,6 +510,62 @@ void main() {
       );
     });
 
+    testWidgets('counts wear the theme colour', (tester) async {
+      await tester.pumpWidget(sectioned());
+
+      final scheme = tester.element(find.byType(NavigationSidebar)).colorScheme;
+      final pill = tester.widget<Container>(
+        find.ancestor(of: find.text('2'), matching: find.byType(Container)),
+      );
+      expect((pill.decoration! as ShapeDecoration).color, scheme.primary);
+      expect(
+        tester.widget<Text>(find.text('2')).style?.color,
+        scheme.onPrimary,
+      );
+    });
+
+    testWidgets('a closed heading keeps its badge on the rows\' badge line', (
+      tester,
+    ) async {
+      await tester.pumpWidget(sectioned(closed: true));
+      await tester.pumpAndSettle();
+
+      final rowBadge = find.ancestor(
+        of: find.text('2'),
+        matching: find.byType(Container),
+      );
+      final heading = dots(red).hitTestable();
+      expect(tester.getTopRight(heading).dx, tester.getTopRight(rowBadge).dx);
+
+      // Hovering shows the chevron before the badge, not after it.
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(
+        location: tester.getCenter(find.text('Decryption')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getTopRight(heading).dx, tester.getTopRight(rowBadge).dx);
+      final chevron = find.byWidgetPredicate(
+        (widget) => widget is GlyphIcon && widget.glyph == Glyphs.chevronDown,
+      );
+      expect(
+        tester
+            .getTopRight(
+              find.descendant(
+                of: find
+                    .ancestor(
+                      of: find.text('Decryption'),
+                      matching: find.byType(Row),
+                    )
+                    .first,
+                matching: chevron,
+              ),
+            )
+            .dx,
+        lessThan(tester.getTopLeft(heading).dx),
+      );
+    });
+
     testWidgets('the merged badge sums counts when nothing failed', (
       tester,
     ) async {
@@ -565,7 +620,11 @@ void main() {
         (widget) => widget is AnimatedGlyph && widget.glyph == Glyphs.copy,
       );
       expect(scripts.hitTestable(), findsOneWidget);
-      expect(dots(amber), findsNWidgets(2));
+      final primary = tester
+          .element(find.byType(NavigationSidebar))
+          .colorScheme
+          .primary;
+      expect(dots(primary), findsNWidgets(2));
       expect(dots(red), findsOneWidget);
     });
   });

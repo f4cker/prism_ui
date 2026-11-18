@@ -40,7 +40,6 @@ const _dotSize = 8.0;
 const _compactDotInset = 6.0;
 const _footerGap = 8.0;
 const _separatorWidth = 16.0;
-const _badgeAmber = Color(0xFFB25E00);
 const _badgeRed = Color(0xFFB3261E);
 const _sectionTitleColor = Color(0xFF8E8C94);
 
@@ -782,10 +781,8 @@ class _SectionHeadingState extends State<_SectionHeading> {
                     style: style,
                   ),
                 ),
-                if (badge != null) ...[
-                  _Badge(badge: badge),
-                  const SizedBox(width: 6),
-                ],
+                // The chevron goes before the badge, which keeps to the
+                // rows' badges' trailing edge.
                 AnimatedOpacity(
                   opacity: _hovered || _focused ? 1 : 0,
                   duration: _chevronDuration,
@@ -800,6 +797,10 @@ class _SectionHeadingState extends State<_SectionHeading> {
                     ),
                   ),
                 ),
+                if (badge != null) ...[
+                  const SizedBox(width: 6),
+                  _Badge(badge: badge),
+                ],
                 const SizedBox(width: _labelGap),
               ],
             ),
@@ -875,21 +876,19 @@ class _Badge extends StatelessWidget {
     if (badge.error) {
       return const _Dot(color: _badgeRed);
     }
+    final scheme = context.colorScheme;
     return Container(
       height: _badgeHeight,
       constraints: const BoxConstraints(minWidth: _badgeHeight),
       padding: const EdgeInsets.symmetric(horizontal: 6),
       alignment: Alignment.center,
-      decoration: const ShapeDecoration(
-        color: _badgeAmber,
-        shape: AppShape.full,
-      ),
+      decoration: ShapeDecoration(color: scheme.primary, shape: AppShape.full),
       child: Text(
         '${badge.count}',
         maxLines: 1,
         style: AppTextStyle.caption2
             .of(context, emphasized: true)
-            .copyWith(color: const Color(0xFFFFFFFF), height: 1),
+            .copyWith(color: scheme.onPrimary, height: 1),
       ),
     );
   }
@@ -965,7 +964,9 @@ class _SidebarButton extends StatelessWidget {
               start: _itemSize - _compactDotInset - _dotSize,
               child: Opacity(
                 opacity: 1 - badgeOpacity,
-                child: _Dot(color: shown.error ? _badgeRed : _badgeAmber),
+                child: _Dot(
+                  color: shown.error ? _badgeRed : context.colorScheme.primary,
+                ),
               ),
             ),
         ],
