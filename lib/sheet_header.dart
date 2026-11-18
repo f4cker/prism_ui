@@ -68,33 +68,46 @@ class SheetToolBar extends StatelessWidget {
 
 /// Fades the surface behind [child] toward its foot so content reads through,
 /// easing out over [overhang] past the foot so the fade shows no edge.
+///
+/// With a [blurSigma], what is behind is also blurred: at [blurSigma] over
+/// the header, then in three steps (0.6, 0.3 and 0.1 of it) over the
+/// [overhang]. Flutter cannot fade a backdrop blur by a mask (under a
+/// ShaderMask the filter reads an empty layer and blurs nothing), so it
+/// steps down under the colour's smooth fade.
 class FloatingHeader extends StatelessWidget {
   const FloatingHeader({
     super.key,
     required this.backgroundColor,
     this.fadeStart = 0.5,
     this.overhang = 0,
+    this.alpha = _alpha,
+    this.blurSigma = 0,
     required this.child,
   });
 
   static const _alpha = 0.9;
   static const _fadeSteps = 8;
+  static const _overhangSigmas = [0.6, 0.3, 0.1];
 
   final Color backgroundColor;
   final double fadeStart;
   final double overhang;
+
+  /// The colour's opacity above the fade.
+  final double alpha;
+  final double blurSigma;
   final Widget child;
 
   Gradient _scrimOf(double height) {
     final start = (height - overhang) * fadeStart / height;
     final stops = <double>[0];
-    final colors = <Color>[backgroundColor.withValues(alpha: _alpha)];
+    final colors = <Color>[backgroundColor.withValues(alpha: alpha)];
     for (var i = 0; i <= _fadeSteps; i++) {
       final t = i / _fadeSteps;
       stops.add(start + (1 - start) * t);
       colors.add(
         backgroundColor.withValues(
-          alpha: _alpha * (1 - Curves.easeInOut.transform(t)),
+          alpha: alpha * (1 - Curves.easeInOut.transform(t)),
         ),
       );
     }
@@ -106,8 +119,27 @@ class FloatingHeader extends StatelessWidget {
     );
   }
 
+  // Bounded: a blur reads only what is under its own box. Unbounded, a list
+  // resting just below the bar would shade its foot before anything had
+  // scrolled under it.
+  static Widget _blur(double sigma) => ClipRect(
+    child: BackdropFilter(
+      filterConfig: ImageFilterConfig.blur(
+        sigmaX: sigma,
+        sigmaY: sigma,
+        bounded: true,
+      ),
+      child: const SizedBox.expand(),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final scrim = LayoutBuilder(
+      builder: (_, constraints) => DecoratedBox(
+        decoration: BoxDecoration(gradient: _scrimOf(constraints.maxHeight)),
+      ),
+    );
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -117,13 +149,25 @@ class FloatingHeader extends StatelessWidget {
           right: 0,
           bottom: -overhang,
           child: IgnorePointer(
-            child: LayoutBuilder(
-              builder: (_, constraints) => DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: _scrimOf(constraints.maxHeight),
-                ),
-              ),
-            ),
+            child: blurSigma <= 0
+                ? scrim
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Column(
+                        children: [
+                          Expanded(child: _blur(blurSigma)),
+                          if (overhang > 0)
+                            for (final step in _overhangSigmas)
+                              SizedBox(
+                                height: overhang / _overhangSigmas.length,
+                                child: _blur(blurSigma * step),
+                              ),
+                        ],
+                      ),
+                      scrim,
+                    ],
+                  ),
           ),
         ),
         child,

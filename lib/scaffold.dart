@@ -106,6 +106,14 @@ class PrismScaffold extends StatelessWidget {
               : isCompact
               ? sheetAppBarHeight
               : 0.0;
+          final shownBody = MediaQuery.removePadding(
+            context: context,
+            removeTop: hasHeader,
+            child: FloatingBarScope(
+              inset: hasHeader ? 0 : overlap,
+              child: body,
+            ),
+          );
           // A wrapper toggled with the header would remount the body.
           final content = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,14 +126,38 @@ class PrismScaffold extends StatelessWidget {
                 ),
               Flexible(
                 fit: hugsContent ? FlexFit.loose : FlexFit.tight,
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: hasHeader,
-                  child: FloatingBarScope(
-                    inset: hasHeader ? 0 : overlap,
-                    child: body,
-                  ),
-                ),
+                // On a page a header holds the rows below it, where the
+                // list cuts them: the bar's band of easing blur moves to
+                // the header's foot, over the rows, so they blur out there
+                // rather than meet an edge.
+                child: barFloats
+                    ? Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          shownBody,
+                          if (hasHeader)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: IgnorePointer(
+                                child: FloatingHeader(
+                                  backgroundColor:
+                                      backgroundColor ??
+                                      SurfaceLevel.page.colorOf(
+                                        context.colorScheme,
+                                      ),
+                                  alpha: barScrimOpacity,
+                                  blurSigma: barBlurSigma,
+                                  fadeStart: 1,
+                                  overhang: barFadeExtent,
+                                  child: const SizedBox(width: double.infinity),
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
+                    : shownBody,
               ),
             ],
           );
@@ -146,8 +178,24 @@ class PrismScaffold extends StatelessWidget {
         ? BottomInsetScope(inset: bottomInset + footInset, child: bodyLayer)
         : bodyLayer;
     if (!isCompact) {
+      final headerBuilder = this.headerBuilder;
       return _ScaffoldFrame(
-        bar: bar,
+        // A header holds the body below the bar, so nothing scrolls under
+        // it: the bar drops the band its blur eases out over, which would
+        // only blur the header.
+        bar: headerBuilder == null
+            ? bar
+            : PreferredSize(
+                preferredSize: bar.preferredSize,
+                child: ListenableBuilder(
+                  listenable: headerListenable ?? _noChange,
+                  builder: (context, child) => _BarFadeScope(
+                    fades: headerBuilder(context) == null,
+                    child: child!,
+                  ),
+                  child: bar,
+                ),
+              ),
         resizeToAvoidBottomInset: resizeToAvoidBottomInset,
         backgroundColor: backgroundColor,
         body: _BodyScope(
@@ -232,13 +280,21 @@ class ScaffoldBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize =>
       Size.fromHeight(isCompact ? sheetToolbarHeight : pageToolbarHeight);
 
-  // An opaque band of the page's own colour: the body is cut off at the
-  // bar's foot (see _ScaffoldFrame), so nothing reads through it. A fade
-  // here let rows show under the title once scrolled, most of all on the
-  // desktop, where with no status bar the fade ran the bar's full height.
+  // Frosted (design review 2): the window-button row and the toolbar blur
+  // what scrolls under them at sigma 20 under the page colour at 80%, so
+  // rows read as movement, not text; over [barFadeExtent] past the foot both
+  // ease to nothing. A blur of the bare page is the page: unscrolled, the
+  // bar shows no edge, shadow or divider.
   Widget _floating(BuildContext context, Widget bar) {
-    return ColoredBox(
-      color: backgroundColor ?? SurfaceLevel.page.colorOf(context.colorScheme),
+    return FloatingHeader(
+      backgroundColor:
+          backgroundColor ?? SurfaceLevel.page.colorOf(context.colorScheme),
+      alpha: barScrimOpacity,
+      blurSigma: barBlurSigma,
+      // Full over the bar, window-button row included; the fade runs only
+      // over the overhang past its foot.
+      fadeStart: 1,
+      overhang: _BarFadeScope.fadesOf(context) ? barFadeExtent : 0,
       child: _WindowControlsClearance(child: bar),
     );
   }
@@ -436,6 +492,28 @@ const double appBarActionSpace = 4;
 const double barButtonGap = 8;
 const double _iconButtonTapPadding = 4;
 
+/// Whether a page bar eases its blur out past its foot: not over a header.
+class _BarFadeScope extends InheritedWidget {
+  const _BarFadeScope({required this.fades, required super.child});
+
+  final bool fades;
+
+  static bool fadesOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_BarFadeScope>()?.fades ??
+      true;
+
+  @override
+  bool updateShouldNotify(_BarFadeScope oldWidget) => fades != oldWidget.fades;
+}
+
+/// The page bar's backdrop blur, and the page colour's opacity over it.
+const double barBlurSigma = 20;
+const double barScrimOpacity = 0.8;
+
+/// The band past the page bar's foot over which its blur and colour fade
+/// out, so the bar has no edge.
+const double barFadeExtent = 20;
+
 /// Where a filled button sits from the app bar edge, leading included: the
 /// layout margin iOS gives a compact and a regular width.
 double appBarActionInset(bool compact) => compact ? 16 : 20;
@@ -496,8 +574,7 @@ class ActionEdgeGap extends StatelessWidget {
 }
 
 /// The surface a page or a sheet lays out on, with [bar] over the top of
-/// [body], which has the bar's height as its top padding and is clipped at
-/// the bar's foot.
+/// [body], which runs under it with the bar's height as its top padding.
 class _ScaffoldFrame extends StatelessWidget {
   const _ScaffoldFrame({
     this.bar,
@@ -537,15 +614,9 @@ class _ScaffoldFrame extends StatelessWidget {
             top: 0,
             right: 0,
             bottom: resize ? mediaQuery.viewInsets.bottom : 0,
-            // The body is laid out from the window's top, with the bar's
-            // height as its top padding, but painted only below the bar: a
-            // list scrolled up is cut at the bar's foot, never drawn under it.
-            child: ClipRect(
-              clipper: _BelowBar(bar == null ? 0 : barHeight),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: MediaQuery(data: bodyData, child: body),
-              ),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: MediaQuery(data: bodyData, child: body),
             ),
           ),
           if (bar != null)
@@ -565,19 +636,6 @@ class _ScaffoldFrame extends StatelessWidget {
       ),
     );
   }
-}
-
-class _BelowBar extends CustomClipper<Rect> {
-  const _BelowBar(this.top);
-
-  final double top;
-
-  @override
-  Rect getClip(Size size) =>
-      Rect.fromLTRB(0, top.clamp(0, size.height), size.width, size.height);
-
-  @override
-  bool shouldReclip(_BelowBar oldClipper) => oldClipper.top != top;
 }
 
 /// A page's or a sheet's bar: the toolbar Material 3's app bar lays out, on
