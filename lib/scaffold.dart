@@ -232,13 +232,13 @@ class ScaffoldBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize =>
       Size.fromHeight(isCompact ? sheetToolbarHeight : pageToolbarHeight);
 
+  // An opaque band of the page's own colour: the body is cut off at the
+  // bar's foot (see _ScaffoldFrame), so nothing reads through it. A fade
+  // here let rows show under the title once scrolled, most of all on the
+  // desktop, where with no status bar the fade ran the bar's full height.
   Widget _floating(BuildContext context, Widget bar) {
-    final top = MediaQuery.paddingOf(context).top;
-    return FloatingHeader(
-      backgroundColor:
-          backgroundColor ?? SurfaceLevel.page.colorOf(context.colorScheme),
-      fadeStart: top / (top + pageToolbarHeight),
-      overhang: _headerOverhang,
+    return ColoredBox(
+      color: backgroundColor ?? SurfaceLevel.page.colorOf(context.colorScheme),
       child: _WindowControlsClearance(child: bar),
     );
   }
@@ -434,7 +434,6 @@ class AppBarActionButton extends StatelessWidget {
 const double appBarActionSpace = 4;
 
 const double barButtonGap = 8;
-const double _headerOverhang = 16;
 const double _iconButtonTapPadding = 4;
 
 /// Where a filled button sits from the app bar edge, leading included: the
@@ -497,7 +496,8 @@ class ActionEdgeGap extends StatelessWidget {
 }
 
 /// The surface a page or a sheet lays out on, with [bar] over the top of
-/// [body], which runs under it with the bar's height as its top padding.
+/// [body], which has the bar's height as its top padding and is clipped at
+/// the bar's foot.
 class _ScaffoldFrame extends StatelessWidget {
   const _ScaffoldFrame({
     this.bar,
@@ -537,9 +537,15 @@ class _ScaffoldFrame extends StatelessWidget {
             top: 0,
             right: 0,
             bottom: resize ? mediaQuery.viewInsets.bottom : 0,
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: MediaQuery(data: bodyData, child: body),
+            // The body is laid out from the window's top, with the bar's
+            // height as its top padding, but painted only below the bar: a
+            // list scrolled up is cut at the bar's foot, never drawn under it.
+            child: ClipRect(
+              clipper: _BelowBar(bar == null ? 0 : barHeight),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: MediaQuery(data: bodyData, child: body),
+              ),
             ),
           ),
           if (bar != null)
@@ -559,6 +565,19 @@ class _ScaffoldFrame extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BelowBar extends CustomClipper<Rect> {
+  const _BelowBar(this.top);
+
+  final double top;
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(0, top.clamp(0, size.height), size.width, size.height);
+
+  @override
+  bool shouldReclip(_BelowBar oldClipper) => oldClipper.top != top;
 }
 
 /// A page's or a sheet's bar: the toolbar Material 3's app bar lays out, on
