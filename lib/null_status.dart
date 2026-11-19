@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/rendering.dart';
 import 'package:prism_ui/shapes/shapes.dart' as shapes;
 import 'package:prism_ui/context.dart';
 import 'package:prism_ui/deferred_push.dart';
@@ -178,6 +179,9 @@ class NullStatus extends StatefulWidget {
   /// Reserves description lines without clipping longer or scaled text.
   final int descriptionMinLines;
 
+  /// Keeps the illustration and title where they sit without trailing content.
+  final bool anchorToHeading;
+
   const NullStatus({
     super.key,
     this.label,
@@ -185,6 +189,7 @@ class NullStatus extends StatefulWidget {
     this.action,
     this.animate = true,
     this.descriptionMinLines = 0,
+    this.anchorToHeading = false,
     required this.illustration,
   }) : assert(descriptionMinLines >= 0);
 
@@ -220,74 +225,147 @@ class _NullStatusState extends State<NullStatus> {
         MediaQuery.textScalerOf(context).scale(AppTextStyle.subheadline.size) *
         AppTextStyle.subheadline.leading /
         AppTextStyle.subheadline.size;
+    final heading = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        enter(
+          EmptyIllustration(
+            type: illustration,
+            dimension: EmptyIllustration.dimensionOf(context),
+            animate: animate,
+          ),
+        ),
+        if (label != null) ...[
+          SizedBox(height: compact ? 12 : 16),
+          enter(
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: AppTextStyle.headline
+                  .of(context)
+                  .copyWith(color: colorScheme.onSurface),
+            ),
+            _staggerStep,
+          ),
+        ],
+      ],
+    );
+    final trailing = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (description != null) ...[
+          const SizedBox(height: 8),
+          enter(
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: descriptionHeight * widget.descriptionMinLines,
+              ),
+              child: Text(
+                description,
+                textAlign: TextAlign.center,
+                style: descriptionStyle.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            _staggerStep * 2,
+          ),
+        ],
+        if (action != null) ...[
+          const SizedBox(height: 24),
+          enter(
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(visualDensity: VisualDensity.standard),
+              child: action,
+            ),
+            _staggerStep * (description != null ? 3 : 2),
+          ),
+        ],
+      ],
+    );
+    Widget content(Widget child) => ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: child,
+    );
+    if (widget.anchorToHeading) {
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          controller: _controller,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: content(
+              _HeadingAnchor(
+                viewportHeight: math.max(0, constraints.maxHeight - 48),
+                children: [heading, trailing],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Align(
-      alignment: const Alignment(0.0, -0.2),
+      alignment: _emptyAlignment,
       child: SingleChildScrollView(
         controller: _controller,
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              enter(
-                EmptyIllustration(
-                  type: illustration,
-                  dimension: EmptyIllustration.dimensionOf(context),
-                  animate: animate,
-                ),
-              ),
-              if (label != null) ...[
-                SizedBox(height: compact ? 12 : 16),
-                enter(
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    style: AppTextStyle.headline
-                        .of(context)
-                        .copyWith(color: colorScheme.onSurface),
-                  ),
-                  _staggerStep,
-                ),
-              ],
-              if (description != null) ...[
-                const SizedBox(height: 8),
-                enter(
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: descriptionHeight * widget.descriptionMinLines,
-                    ),
-                    child: Text(
-                      description,
-                      textAlign: TextAlign.center,
-                      style: descriptionStyle.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  _staggerStep * 2,
-                ),
-              ],
-              if (action != null) ...[
-                const SizedBox(height: 24),
-                enter(
-                  Theme(
-                    data: Theme.of(
-                      context,
-                    ).copyWith(visualDensity: VisualDensity.standard),
-                    child: action,
-                  ),
-                  _staggerStep * (description != null ? 3 : 2),
-                ),
-              ],
-            ],
-          ),
+        child: content(
+          Column(mainAxisSize: MainAxisSize.min, children: [heading, trailing]),
         ),
       ),
     );
   }
 }
 
+class _HeadingAnchor extends MultiChildRenderObjectWidget {
+  const _HeadingAnchor({required this.viewportHeight, required super.children});
+
+  final double viewportHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderHeadingAnchor(viewportHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderHeadingAnchor renderObject,
+  ) {
+    renderObject.viewportHeight = viewportHeight;
+  }
+}
+
+class _RenderHeadingAnchor extends RenderFlex {
+  _RenderHeadingAnchor(this._viewportHeight)
+    : super(direction: Axis.vertical, mainAxisSize: MainAxisSize.min);
+
+  double _viewportHeight;
+
+  set viewportHeight(double value) {
+    if (_viewportHeight == value) return;
+    _viewportHeight = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final offset = math.max(
+      0.0,
+      (_viewportHeight - firstChild!.size.height) *
+          ((_emptyAlignment.y + 1) / 2),
+    );
+    size = Size(size.width, math.max(_viewportHeight, size.height + offset));
+    for (var child = firstChild; child != null; child = childAfter(child)) {
+      final data = child.parentData! as FlexParentData;
+      data.offset += Offset(0, offset);
+    }
+  }
+}
+
+const _emptyAlignment = Alignment(0.0, -0.2);
 const _compactHeight = 560.0;
 const _staggerStep = Duration(milliseconds: 60);
 const _enterRise = 12.0;

@@ -53,4 +53,54 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'heading anchor matches a bare empty state and scrolls long text',
+    (tester) async {
+      tester.view.physicalSize = const Size(420, 300);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      Future<void> show({bool trailing = false}) async {
+        await tester.pumpWidget(
+          TestApp(
+            child: NullStatus(
+              illustration: Illustration.search,
+              animate: false,
+              anchorToHeading: trailing,
+              label: 'Empty',
+              description: trailing
+                  ? 'First\nSecond\nThird\nFourth\nFifth'
+                  : null,
+              action: trailing
+                  ? const SizedBox(
+                      key: ValueKey('action'),
+                      width: 100,
+                      height: 40,
+                    )
+                  : null,
+            ),
+          ),
+        );
+        await tester.pump();
+      }
+
+      await show();
+      final illustration = tester.getCenter(find.byType(EmptyIllustration));
+      final title = tester.getRect(find.text('Empty'));
+      await show(trailing: true);
+      expect(tester.getCenter(find.byType(EmptyIllustration)), illustration);
+      expect(tester.getRect(find.text('Empty')), title);
+      final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
+      await tester.ensureVisible(find.byKey(const ValueKey('action')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getBottomRight(find.byKey(const ValueKey('action'))).dy,
+        lessThanOrEqualTo(300),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
