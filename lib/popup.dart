@@ -1945,6 +1945,9 @@ class PopupMenu extends StatefulWidget {
     this.itemPadding,
   });
 
+  static final double labelMaxWidth =
+      _menuMaxWidth - 2 * _cardInset - _itemPadding.horizontal;
+
   final List<PopupMenuItem> items;
 
   /// The first level's width instead of one between 160 and 280 dp.
