@@ -53,6 +53,7 @@ class NullStatusSwitcher extends StatefulWidget {
   /// Without it, the first load leaves the push alone and shows
   /// [loadingStatus] at once.
   final bool holdsArrival;
+  final bool animate;
 
   const NullStatusSwitcher({
     super.key,
@@ -60,6 +61,7 @@ class NullStatusSwitcher extends StatefulWidget {
     this.isEmpty = false,
     this.isSearching = false,
     this.holdsArrival = true,
+    this.animate = true,
     this.loadingStatus,
     this.nullStatus,
     required this.child,
@@ -122,8 +124,12 @@ class _NullStatusSwitcherState extends State<NullStatusSwitcher> {
       (false, _) => _NullStatusSlot.content,
     };
     return AnimatedSwitcher(
-      duration: context.motionDuration(commonDuration),
-      reverseDuration: context.motionDuration(_exitDuration),
+      duration: widget.animate
+          ? context.motionDuration(commonDuration)
+          : Duration.zero,
+      reverseDuration: widget.animate
+          ? context.motionDuration(_exitDuration)
+          : Duration.zero,
       switchInCurve: Easing.emphasizedDecelerate,
       switchOutCurve: Curves.easeIn,
       layoutBuilder: (currentChild, previousChildren) => Align(
@@ -167,14 +173,20 @@ class NullStatus extends StatefulWidget {
   final String? description;
   final Widget? action;
   final Illustration illustration;
+  final bool animate;
+
+  /// Reserves description lines without clipping longer or scaled text.
+  final int descriptionMinLines;
 
   const NullStatus({
     super.key,
     this.label,
     this.description,
     this.action,
+    this.animate = true,
+    this.descriptionMinLines = 0,
     required this.illustration,
-  });
+  }) : assert(descriptionMinLines >= 0);
 
   @override
   State<NullStatus> createState() => _NullStatusState();
@@ -197,9 +209,17 @@ class _NullStatusState extends State<NullStatus> {
 
   @override
   Widget build(BuildContext context) {
-    final NullStatus(:label, :description, :action, :illustration) = widget;
+    final NullStatus(:label, :description, :action, :illustration, :animate) =
+        widget;
     final colorScheme = context.colorScheme;
     final compact = MediaQuery.sizeOf(context).height < _compactHeight;
+    Widget enter(Widget child, [Duration delay = Duration.zero]) =>
+        animate ? _EnterItem(delay: delay, child: child) : child;
+    final descriptionStyle = AppTextStyle.subheadline.of(context);
+    final descriptionHeight =
+        MediaQuery.textScalerOf(context).scale(AppTextStyle.subheadline.size) *
+        AppTextStyle.subheadline.leading /
+        AppTextStyle.subheadline.size;
     return Align(
       alignment: const Alignment(0.0, -0.2),
       child: SingleChildScrollView(
@@ -210,48 +230,54 @@ class _NullStatusState extends State<NullStatus> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _EnterItem(
-                child: EmptyIllustration(
+              enter(
+                EmptyIllustration(
                   type: illustration,
                   dimension: EmptyIllustration.dimensionOf(context),
+                  animate: animate,
                 ),
               ),
               if (label != null) ...[
                 SizedBox(height: compact ? 12 : 16),
-                _EnterItem(
-                  delay: _staggerStep,
-                  child: Text(
+                enter(
+                  Text(
                     label,
                     textAlign: TextAlign.center,
                     style: AppTextStyle.headline
                         .of(context)
                         .copyWith(color: colorScheme.onSurface),
                   ),
+                  _staggerStep,
                 ),
               ],
               if (description != null) ...[
                 const SizedBox(height: 8),
-                _EnterItem(
-                  delay: _staggerStep * 2,
-                  child: Text(
-                    description,
-                    textAlign: TextAlign.center,
-                    style: AppTextStyle.subheadline
-                        .of(context)
-                        .copyWith(color: colorScheme.onSurfaceVariant),
+                enter(
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: descriptionHeight * widget.descriptionMinLines,
+                    ),
+                    child: Text(
+                      description,
+                      textAlign: TextAlign.center,
+                      style: descriptionStyle.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
+                  _staggerStep * 2,
                 ),
               ],
               if (action != null) ...[
                 const SizedBox(height: 24),
-                _EnterItem(
-                  delay: _staggerStep * (description != null ? 3 : 2),
-                  child: Theme(
+                enter(
+                  Theme(
                     data: Theme.of(
                       context,
                     ).copyWith(visualDensity: VisualDensity.standard),
                     child: action,
                   ),
+                  _staggerStep * (description != null ? 3 : 2),
                 ),
               ],
             ],
@@ -334,11 +360,13 @@ class _EnterItemState extends State<_EnterItem>
 class EmptyIllustration extends StatefulWidget {
   final Illustration type;
   final double dimension;
+  final bool animate;
 
   const EmptyIllustration({
     super.key,
     required this.type,
     required this.dimension,
+    this.animate = true,
   });
 
   static double dimensionOf(BuildContext context) =>
@@ -369,7 +397,7 @@ class _EmptyIllustrationState extends State<EmptyIllustration>
       return;
     }
     _started = true;
-    if (!_skipsEntrance(context)) {
+    if (widget.animate && !_skipsEntrance(context)) {
       _controller.forward(from: 0);
     }
   }
@@ -388,10 +416,10 @@ class _EmptyIllustrationState extends State<EmptyIllustration>
       child: CustomPaint(
         key: ValueKey(type),
         painter: _IllustrationPainter(
-          shape: _shape,
+          shape: widget.animate ? _shape : _shapes.first,
           glyph: type.glyph,
           color: type.isError ? colorScheme.error : colorScheme.primary,
-          layout: _layout,
+          layout: widget.animate ? _layout : _layouts.first,
           entrance: _entrance,
           progress: _controller,
         ),
