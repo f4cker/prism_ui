@@ -106,14 +106,6 @@ class PrismScaffold extends StatelessWidget {
               : isCompact
               ? sheetAppBarHeight
               : 0.0;
-          final shownBody = MediaQuery.removePadding(
-            context: context,
-            removeTop: hasHeader,
-            child: FloatingBarScope(
-              inset: hasHeader ? 0 : overlap,
-              child: body,
-            ),
-          );
           // A wrapper toggled with the header would remount the body.
           final content = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,41 +118,14 @@ class PrismScaffold extends StatelessWidget {
                 ),
               Flexible(
                 fit: hugsContent ? FlexFit.loose : FlexFit.tight,
-                // On a page a header holds the rows below it, where the
-                // list cuts them: the bar's band of easing blur moves to
-                // the header's foot, over the rows, so they blur out there
-                // rather than meet an edge.
-                child: barFloats
-                    ? Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          shownBody,
-                          if (hasHeader)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              child: IgnorePointer(
-                                child: FloatingHeader(
-                                  backgroundColor:
-                                      backgroundColor ??
-                                      SurfaceLevel.page.colorOf(
-                                        context.colorScheme,
-                                      ),
-                                  alpha: barScrimOpacity,
-                                  blurSigma: barBlurSigma,
-                                  fadeStart: 1,
-                                  overhang: barFadeExtent,
-                                  overhangPresence: _BandPresenceScope.of(
-                                    context,
-                                  ),
-                                  child: const SizedBox(width: double.infinity),
-                                ),
-                              ),
-                            ),
-                        ],
-                      )
-                    : shownBody,
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: hasHeader,
+                  child: FloatingBarScope(
+                    inset: hasHeader ? 0 : overlap,
+                    child: body,
+                  ),
+                ),
               ),
             ],
           );
@@ -181,42 +146,24 @@ class PrismScaffold extends StatelessWidget {
         ? BottomInsetScope(inset: bottomInset + footInset, child: bodyLayer)
         : bodyLayer;
     if (!isCompact) {
-      final headerBuilder = this.headerBuilder;
-      return _BandPresence(
-        child: _ScaffoldFrame(
-          // A header holds the body below the bar, so nothing scrolls under
-          // it: the bar drops the band its blur eases out over, which would
-          // only blur the header.
-          bar: headerBuilder == null
-              ? bar
-              : PreferredSize(
-                  preferredSize: bar.preferredSize,
-                  child: ListenableBuilder(
-                    listenable: headerListenable ?? _noChange,
-                    builder: (context, child) => _BarFadeScope(
-                      fades: headerBuilder(context) == null,
-                      child: child!,
-                    ),
-                    child: bar,
-                  ),
+      return _ScaffoldFrame(
+        bar: bar,
+        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+        backgroundColor: backgroundColor,
+        body: _BodyScope(
+          child: foot == null
+              ? content
+              : Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    content,
+                    if (!footHidden)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: BarItemPresence.foot(child: foot),
+                      ),
+                  ],
                 ),
-          resizeToAvoidBottomInset: resizeToAvoidBottomInset,
-          backgroundColor: backgroundColor,
-          body: _BodyScope(
-            child: foot == null
-                ? content
-                : Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      content,
-                      if (!footHidden)
-                        Align(
-                          alignment: Alignment.bottomCenter,
-                          child: BarItemPresence.foot(child: foot),
-                        ),
-                    ],
-                  ),
-          ),
         ),
       );
     }
@@ -285,22 +232,13 @@ class ScaffoldBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize =>
       Size.fromHeight(isCompact ? sheetToolbarHeight : pageToolbarHeight);
 
-  // Frosted (design review 2): the window-button row and the toolbar blur
-  // what scrolls under them at sigma 20 under the page colour at 80%, so
-  // rows read as movement, not text; over [barFadeExtent] past the foot both
-  // ease to nothing. A blur of the bare page is the page: unscrolled, the
-  // bar shows no edge, shadow or divider.
   Widget _floating(BuildContext context, Widget bar) {
+    final top = MediaQuery.paddingOf(context).top;
     return FloatingHeader(
       backgroundColor:
           backgroundColor ?? SurfaceLevel.page.colorOf(context.colorScheme),
-      alpha: barScrimOpacity,
-      blurSigma: barBlurSigma,
-      // Full over the bar, window-button row included; the fade runs only
-      // over the overhang past its foot.
-      fadeStart: 1,
-      overhang: _BarFadeScope.fadesOf(context) ? barFadeExtent : 0,
-      overhangPresence: _BandPresenceScope.of(context),
+      fadeStart: top / (top + pageToolbarHeight),
+      overhang: _headerOverhang,
       child: _WindowControlsClearance(child: bar),
     );
   }
@@ -496,88 +434,8 @@ class AppBarActionButton extends StatelessWidget {
 const double appBarActionSpace = 4;
 
 const double barButtonGap = 8;
+const double _headerOverhang = 16;
 const double _iconButtonTapPadding = 4;
-
-/// How much of the band past the bar's (or a header's) foot shows: none
-/// over a list at its top, all of it once [barFadeExtent] has scrolled
-/// under. At rest the band would blur and shade the first row.
-class _BandPresence extends StatefulWidget {
-  const _BandPresence({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_BandPresence> createState() => _BandPresenceState();
-}
-
-class _BandPresenceState extends State<_BandPresence> {
-  final _presence = ValueNotifier<double>(0);
-
-  // The page's own list: the outermost vertical one. A field or a box
-  // scrolling inside it says nothing of what is under the bar.
-  int? _depth;
-
-  bool _onMetrics(ScrollMetrics metrics, int depth) {
-    if (metrics.axis != Axis.vertical) return false;
-    final known = _depth;
-    if (known != null && depth > known) return false;
-    _depth = depth;
-    _presence.value = clampDouble(metrics.extentBefore / barFadeExtent, 0, 1);
-    return false;
-  }
-
-  @override
-  void dispose() {
-    _presence.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return NotificationListener<ScrollMetricsNotification>(
-      onNotification: (n) => _onMetrics(n.metrics, n.depth),
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (n) => _onMetrics(n.metrics, n.depth),
-        child: _BandPresenceScope(presence: _presence, child: widget.child),
-      ),
-    );
-  }
-}
-
-class _BandPresenceScope extends InheritedWidget {
-  const _BandPresenceScope({required this.presence, required super.child});
-
-  final ValueListenable<double> presence;
-
-  static ValueListenable<double>? of(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<_BandPresenceScope>()?.presence;
-
-  @override
-  bool updateShouldNotify(_BandPresenceScope oldWidget) =>
-      presence != oldWidget.presence;
-}
-
-/// Whether a page bar eases its blur out past its foot: not over a header.
-class _BarFadeScope extends InheritedWidget {
-  const _BarFadeScope({required this.fades, required super.child});
-
-  final bool fades;
-
-  static bool fadesOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<_BarFadeScope>()?.fades ??
-      true;
-
-  @override
-  bool updateShouldNotify(_BarFadeScope oldWidget) => fades != oldWidget.fades;
-}
-
-/// The page bar's backdrop blur, and the page colour's opacity over it.
-const double barBlurSigma = 20;
-const double barScrimOpacity = 0.8;
-
-/// The band past the page bar's foot over which its blur and colour fade
-/// out, so the bar has no edge.
-const double barFadeExtent = 20;
 
 /// Where a filled button sits from the app bar edge, leading included: the
 /// layout margin iOS gives a compact and a regular width.
