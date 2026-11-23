@@ -71,6 +71,9 @@ class LiquidGlassHost extends StatelessWidget {
   @visibleForTesting
   static bool? debugCarryBandsOverride;
 
+  @visibleForTesting
+  static bool? debugSkipRimOverride;
+
   /// How many panes hold a capture, under a host or not.
   @visibleForTesting
   static int get debugHeldCaptures => _LiquidGlassLayer._capturesHeld;

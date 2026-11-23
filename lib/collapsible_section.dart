@@ -257,7 +257,8 @@ class _SliverCollapsibleGroupsState extends State<SliverCollapsibleGroups>
 }
 
 /// The header of a [SliverCollapsibleGroups] group, its chevron turning with
-/// [unfold] from pointing at the label to pointing down.
+/// [unfold] from pointing at the label to pointing down; without [onToggle]
+/// it has no chevron.
 class CollapsibleHeader extends StatefulWidget {
   final String label;
   final int count;
@@ -303,7 +304,7 @@ class _CollapsibleHeaderState extends State<CollapsibleHeader> {
         children: [
           TextSpan(text: widget.label),
           TextSpan(
-            text: ' (${widget.count})',
+            text: ' ${widget.count}',
             style: TextStyle(
               color: colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.normal,
@@ -357,14 +358,15 @@ class _CollapsibleHeaderState extends State<CollapsibleHeader> {
                             .copyWith(color: colorScheme.onSurfaceVariant),
                         child: trailing,
                       ),
-                    RotationTransition(
-                      turns: widget.unfold.drive(_turns),
-                      child: GlyphIcon(
-                        Glyphs.chevronDown,
-                        size: 20,
-                        color: colorScheme.onSurfaceVariant,
+                    if (collapsible)
+                      RotationTransition(
+                        turns: widget.unfold.drive(_turns),
+                        child: GlyphIcon(
+                          Glyphs.chevronDown,
+                          size: 20,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
