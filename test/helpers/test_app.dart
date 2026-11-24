@@ -19,6 +19,8 @@ class TestUiLocalizations implements UiLocalizations {
   @override
   String get cut => 'Cut';
   @override
+  String get details => 'Details';
+  @override
   String get dialog => 'Dialog';
   @override
   String get hidePassword => 'Hide password';

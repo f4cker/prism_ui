@@ -7,6 +7,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/color.dart';
 import 'package:prism_ui/context.dart';
+import 'package:prism_ui/l10n.dart';
 import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/shape.dart';
 import 'package:prism_ui/surface.dart';
@@ -22,6 +23,7 @@ const _bannerGap = 8.0;
 const _bannerInset = 8.0;
 const _bannerMaxWidth = 556.0;
 const _bannerMinHeight = 52.0;
+const _bannerMaxLines = 3;
 const _dropSpring = SpringDescription(mass: 1, stiffness: 256, damping: 27.2);
 const _exitDuration = Duration(milliseconds: 170);
 const _dismissVelocity = 700.0;
@@ -64,16 +66,19 @@ class _BannerMessage {
     required this.text,
     required this.level,
     required this.onTap,
+    required this.onDetails,
   });
 
   final int id;
   final String text;
   final BannerLevel level;
   final VoidCallback? onTap;
+  final VoidCallback? onDetails;
 
   Duration get duration {
     final duration = level.duration;
-    if (onTap == null || duration >= _actionMinDuration) {
+    if ((onTap == null && onDetails == null) ||
+        duration >= _actionMinDuration) {
       return duration;
     }
     return _actionMinDuration;
@@ -133,11 +138,13 @@ class BannerHostState extends State<BannerHost> {
       _entries.where((entry) => entry.visible);
 
   /// A banner with [onTap] runs it when tapped, as an iOS notification
-  /// opens what it tells of.
+  /// opens what it tells of. A [text] too long for the banner is cut to a
+  /// summary with a Details link to [onDetails], or failing that [onTap].
   void show(
     String text, {
     BannerLevel level = BannerLevel.info,
     VoidCallback? onTap,
+    VoidCallback? onDetails,
   }) {
     if (text.isEmpty) {
       return;
@@ -147,6 +154,7 @@ class BannerHostState extends State<BannerHost> {
       text: text,
       level: level,
       onTap: onTap,
+      onDetails: onDetails,
     );
     if (_merge(message)) {
       return;
@@ -168,6 +176,7 @@ class BannerHostState extends State<BannerHost> {
         text: message.text,
         level: message.level,
         onTap: message.onTap,
+        onDetails: message.onDetails,
       );
       _entriesNotifier.value = List<_BannerEntry>.from(entries)
         ..[index] = _BannerEntry(message: merged, visible: true);
@@ -317,6 +326,7 @@ class BannerHostState extends State<BannerHost> {
   }) {
     final message = entry.message;
     final onTap = message.onTap;
+    final onDetails = message.onDetails ?? onTap;
     return _Banner(
       key: ValueKey(entry.id),
       visible: entry.visible,
@@ -334,7 +344,15 @@ class BannerHostState extends State<BannerHost> {
               onTap();
             },
       onDragging: (dragging) => _setDragging(entry.id, dragging),
-      child: _BannerContent(message: message),
+      child: _BannerContent(
+        message: message,
+        onDetails: onDetails == null
+            ? null
+            : () {
+                _dismiss(entry.id);
+                onDetails();
+              },
+      ),
     );
   }
 
@@ -645,23 +663,104 @@ class _BannerSurface extends StatelessWidget {
 }
 
 class _BannerContent extends StatelessWidget {
-  const _BannerContent({required this.message});
+  const _BannerContent({required this.message, required this.onDetails});
 
   final _BannerMessage message;
+  final VoidCallback? onDetails;
 
   @override
   Widget build(BuildContext context) {
+    final color = message.level.contentOf(context.colorScheme);
+    final style = DefaultTextStyle.of(context).style.merge(
+      AppTextStyle.subheadline
+          .of(context, emphasized: true)
+          .copyWith(color: color),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final onDetails = this.onDetails;
+            final label = Localizations.of<UiLocalizations>(
+              context,
+              UiLocalizations,
+            )?.details;
+            if (onDetails == null ||
+                label == null ||
+                _fits(context, style, constraints.maxWidth)) {
+              return Text(
+                message.text,
+                maxLines: _bannerMaxLines,
+                style: style,
+                overflow: TextOverflow.ellipsis,
+              );
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 4,
+              children: [
+                Text(
+                  message.text,
+                  maxLines: _bannerMaxLines - 1,
+                  style: style,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _DetailsLink(label: label, color: color, onTap: onDetails),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  bool _fits(BuildContext context, TextStyle style, double width) {
+    final painter = TextPainter(
+      text: TextSpan(text: message.text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: _bannerMaxLines,
+      locale: Localizations.maybeLocaleOf(context),
+    )..layout(maxWidth: width);
+    final fits = !painter.didExceedMaxLines;
+    painter.dispose();
+    return fits;
+  }
+}
+
+class _DetailsLink extends StatelessWidget {
+  const _DetailsLink({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
         child: Text(
-          message.text,
-          maxLines: 3,
-          style: AppTextStyle.subheadline
+          label,
+          style: AppTextStyle.footnote
               .of(context, emphasized: true)
-              .copyWith(color: message.level.contentOf(context.colorScheme)),
-          overflow: TextOverflow.ellipsis,
+              .copyWith(
+                color: color,
+                decoration: TextDecoration.underline,
+                decorationColor: color,
+              ),
         ),
       ),
     );

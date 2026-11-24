@@ -637,7 +637,10 @@ class InputDecorator extends StatelessWidget {
               decoration.errorText!,
               style: errorStyle,
               textAlign: textAlign,
-              overflow: TextOverflow.ellipsis,
+              // An ellipsis with no line limit would cut the error to one line.
+              overflow: decoration.errorMaxLines == null
+                  ? null
+                  : TextOverflow.ellipsis,
               maxLines: decoration.errorMaxLines,
             ),
           )

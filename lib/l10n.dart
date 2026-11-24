@@ -27,6 +27,9 @@ abstract class UiLocalizations {
 
   String get cut;
 
+  /// The link on a banner cut short that opens its whole text.
+  String get details;
+
   String get dialog;
 
   String get hidePassword;
