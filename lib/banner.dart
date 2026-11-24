@@ -75,10 +75,9 @@ class _BannerMessage {
   final VoidCallback? onTap;
   final VoidCallback? onDetails;
 
-  Duration get duration {
+  Duration duration({required bool linkShown}) {
     final duration = level.duration;
-    if ((onTap == null && onDetails == null) ||
-        duration >= _actionMinDuration) {
+    if ((onTap == null && !linkShown) || duration >= _actionMinDuration) {
       return duration;
     }
     return _actionMinDuration;
@@ -121,6 +120,7 @@ class BannerHostState extends State<BannerHost> {
   final _hideTimers = <int, Timer>{};
   final _holdTimers = <int, Timer>{};
   final _held = <int>{};
+  final _linkShown = <int>{};
   var _nextId = 0;
   int? _draggingId;
 
@@ -207,7 +207,7 @@ class BannerHostState extends State<BannerHost> {
       final visible = _visibleEntries.toList();
       if (visible.length >= maxVisible) {
         final oldest = visible.last;
-        if (_held.contains(oldest.id) && oldest.message.onTap == null) {
+        if (_held.contains(oldest.id) && !_actionable(oldest.message)) {
           _hide(oldest.id);
           continue;
         }
@@ -231,6 +231,25 @@ class BannerHostState extends State<BannerHost> {
     }
   }
 
+  bool _actionable(_BannerMessage message) =>
+      message.onTap != null || _linkShown.contains(message.id);
+
+  // Called from layout, so it only touches timers, never the entries.
+  void _showLink(_BannerMessage message) {
+    if (!_linkShown.add(message.id)) {
+      return;
+    }
+    final hide = _hideTimers.remove(message.id);
+    if (hide == null) {
+      return;
+    }
+    hide.cancel();
+    _hideTimers[message.id] = Timer(
+      message.duration(linkShown: true),
+      () => _hide(message.id),
+    );
+  }
+
   void _startTimers(_BannerMessage message) {
     final id = message.id;
     _cancelTimersOf(id);
@@ -242,7 +261,10 @@ class BannerHostState extends State<BannerHost> {
       _held.add(id);
       _processQueue();
     });
-    _hideTimers[id] = Timer(message.duration, () => _hide(id));
+    _hideTimers[id] = Timer(
+      message.duration(linkShown: _linkShown.contains(id)),
+      () => _hide(id),
+    );
   }
 
   void _cancelTimersOf(int id) {
@@ -312,6 +334,7 @@ class BannerHostState extends State<BannerHost> {
     if (!entries.any((entry) => entry.id == id)) {
       return;
     }
+    _linkShown.remove(id);
     _entriesNotifier.value = entries
         .where((entry) => entry.id != id)
         .toList(growable: false);
@@ -346,6 +369,7 @@ class BannerHostState extends State<BannerHost> {
       onDragging: (dragging) => _setDragging(entry.id, dragging),
       child: _BannerContent(
         message: message,
+        onLinkShown: () => _showLink(message),
         onDetails: onDetails == null
             ? null
             : () {
@@ -663,10 +687,15 @@ class _BannerSurface extends StatelessWidget {
 }
 
 class _BannerContent extends StatelessWidget {
-  const _BannerContent({required this.message, required this.onDetails});
+  const _BannerContent({
+    required this.message,
+    required this.onDetails,
+    required this.onLinkShown,
+  });
 
   final _BannerMessage message;
   final VoidCallback? onDetails;
+  final VoidCallback onLinkShown;
 
   @override
   Widget build(BuildContext context) {
@@ -697,6 +726,7 @@ class _BannerContent extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               );
             }
+            onLinkShown();
             return Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,

@@ -65,4 +65,54 @@ void main() {
     expect(find.text(long), findsOneWidget);
     expect(find.text('Details'), findsNothing);
   });
+
+  testWidgets('a short banner with details keeps its level\'s time', (
+    tester,
+  ) async {
+    final host = await pumpHost(tester);
+
+    host.show('Saved.', onDetails: () {});
+    await dropIn(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved.'), findsNothing);
+  });
+
+  testWidgets('a short banner with details gives way to the next', (
+    tester,
+  ) async {
+    final host = await pumpHost(tester);
+
+    host.show('Low.', level: BannerLevel.warning, onDetails: () {});
+    await dropIn(tester);
+    host.show('Next.');
+    await tester.pump(const Duration(milliseconds: 3200));
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.text('Low.'), findsNothing);
+    expect(find.text('Next.'), findsOneWidget);
+  });
+
+  testWidgets('a banner showing its link stays and is not pushed out', (
+    tester,
+  ) async {
+    final host = await pumpHost(tester);
+
+    host.show(long, level: BannerLevel.warning, onDetails: () {});
+    await dropIn(tester);
+    expect(find.text('Details'), findsOneWidget);
+    host.show('Next.');
+    for (var i = 0; i < 11; i++) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    expect(find.text('Details'), findsOneWidget);
+    expect(find.text('Next.'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Details'), findsNothing);
+    expect(find.text('Next.'), findsOneWidget);
+  });
 }
