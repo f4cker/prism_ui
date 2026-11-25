@@ -119,6 +119,7 @@ class Card extends StatelessWidget {
     this.statesController,
     this.inert = false,
     this.fillsSelection = false,
+    this.fill,
     required this.child,
   }) : isSelected = isSelected ?? false;
 
@@ -130,6 +131,10 @@ class Card extends StatelessWidget {
   /// A selected card keeps its fill unless [fillsSelection]; callers mark it.
   final bool isSelected;
   final bool fillsSelection;
+
+  /// The resting fill in place of the card's level; transparent where what
+  /// the card sits on already has that color.
+  final Color? fill;
   final bool isError;
   final void Function()? onPressed;
   final Widget child;
@@ -207,7 +212,7 @@ class Card extends StatelessWidget {
       fill: switch ((isError, _filled)) {
         (true, _) => colorScheme.errorContainer,
         (_, true) => colorScheme.primary,
-        _ => level.colorOf(colorScheme),
+        _ => fill ?? level.colorOf(colorScheme),
       },
       shape: shape ?? AppShape.all(radius ?? AppCorner.md),
       inkColor: _filled ? content.text : null,

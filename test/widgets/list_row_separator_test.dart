@@ -74,7 +74,7 @@ void main() {
 
     expect(
       tester.getSize(find.byType(DecorationListItem).first).height,
-      listRowMinHeight,
+      listRowExtent(titleHeight: 22),
     );
     expect(tester.getSize(find.byType(DecorationListItem).last).height, 48);
   });

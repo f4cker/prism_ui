@@ -21,6 +21,10 @@ class SliverPrismList extends StatelessWidget {
   final ChildIndexGetter? findChildIndexCallback;
   final ListController? listController;
   final bool addRepaintBoundaries;
+
+  /// Off where nothing in a row asks to be kept alive, which spares each row
+  /// the elements that would listen for it.
+  final bool addAutomaticKeepAlives;
   final bool anchorAtEnd;
 
   const SliverPrismList({
@@ -33,6 +37,7 @@ class SliverPrismList extends StatelessWidget {
     this.findChildIndexCallback,
     this.listController,
     this.addRepaintBoundaries = true,
+    this.addAutomaticKeepAlives = true,
     this.anchorAtEnd = false,
   }) : assert(listController == null || (gap == 0 && itemExtent == null));
 
@@ -56,6 +61,7 @@ class SliverPrismList extends StatelessWidget {
         childCount: itemCount,
         findChildIndexCallback: findChildIndexCallback,
         addRepaintBoundaries: addRepaintBoundaries,
+        addAutomaticKeepAlives: addAutomaticKeepAlives,
       );
     }
     final findChildIndex = findChildIndexCallback;
@@ -71,6 +77,7 @@ class SliverPrismList extends StatelessWidget {
               null => null,
             },
       addRepaintBoundaries: addRepaintBoundaries,
+      addAutomaticKeepAlives: addAutomaticKeepAlives,
       semanticIndexCallback: (_, index) => index.isEven ? index ~/ 2 : null,
     );
   }

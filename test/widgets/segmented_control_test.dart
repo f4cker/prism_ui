@@ -51,6 +51,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(value, 2);
 
+    await tester.pumpWidget(build(TonalButtonSize.section));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(SegmentedControl<int>)).height,
+      TonalButtonSize.section.button,
+    );
+    for (final (index, label) in ['All', 'Active 12', 'Failed'].indexed) {
+      expect(
+        tester.getSize(presses.at(index)).width,
+        tester.getSize(find.text(label)).width.ceil() + 28,
+      );
+    }
+
     await tester.pumpWidget(build(null));
     expect(tester.getRect(find.byType(SegmentedControl<int>)).width, 800);
   });

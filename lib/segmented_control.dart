@@ -31,6 +31,8 @@ class SegmentedControl<T> extends StatelessWidget {
   static const double _sizedInset = 2;
   static const int _sizedLabelInset = 10;
   static const double _denseHeight = 26;
+  static int _labelInsetOf(TonalButtonSize size) =>
+      size == TonalButtonSize.compact ? 10 : 14;
 
   final List<(T, String)> segments;
   final T value;
@@ -82,7 +84,7 @@ class SegmentedControl<T> extends StatelessWidget {
       widths = [
         for (final (_, label) in segments)
           measure.computeTextSize(Text(label, style: style)).width.ceil() +
-              2 * _sizedLabelInset,
+              2 * _labelInsetOf(size),
       ];
     }
     Widget segment(T option, String label) => PressSurface(

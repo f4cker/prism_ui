@@ -79,7 +79,8 @@ EdgeInsets listHeaderPaddingOf(BuildContext context) {
       1.mAp(context);
 }
 
-const listRowMinHeight = 53.0;
+/// iOS's least tap target, under any text size.
+const listRowMinHeight = 44.0;
 const listRowVerticalPadding = 15.5;
 const listTwoLineRowVerticalPadding = 10.0;
 

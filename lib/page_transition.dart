@@ -8,8 +8,10 @@ import 'package:flutter/widgets.dart';
 import 'package:prism_ui/drag_back.dart';
 import 'package:prism_ui/liquid_glass.dart';
 import 'package:prism_ui/motion.dart';
+import 'package:prism_ui/sheet_navigator.dart';
 import 'package:prism_ui/surface.dart';
 import 'package:prism_ui/theme_data.dart';
+import 'package:prism_ui/route_scope.dart';
 
 /// iOS 27 pushes and pops a page on a critically damped spring of 0.3 s that
 /// sets off at nine times its distance a second, as measured on the simulator.
@@ -220,6 +222,8 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
 
   // Impeller redraws a moving page in full each frame.
   final _motionSnapshot = SnapshotController();
+  Animation<double>? _sheetCover;
+  var _glass = false;
 
   // Only a page going out of view is drawn from its snapshot. One coming into
   // view stays live, as a frozen picture of it would show what it held when
@@ -228,14 +232,20 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
     final animation = this.animation!;
     final secondary = secondaryAnimation!;
     final dragged = navigator?.userGestureInProgress ?? false;
-    _motionSnapshot.allowSnapshotting = _coveredByZoom.value
-        ? animation.isCompleted && secondary.isAnimating
-        : (secondary.status == AnimationStatus.forward && !dragged) ||
-              (!recedesCovered &&
-                  ((animation.status.isAnimating &&
-                          (animation.status == AnimationStatus.reverse ||
-                              dragged)) ||
-                      _isDragBackActive));
+    // Under a moving sheet the page holds still behind the scrim, while glass
+    // would sample a picture of it.
+    final underMovingSheet =
+        !_glass && (_sheetCover?.status.isAnimating ?? false);
+    _motionSnapshot.allowSnapshotting =
+        underMovingSheet ||
+        (_coveredByZoom.value
+            ? animation.isCompleted && secondary.isAnimating
+            : (secondary.status == AnimationStatus.forward && !dragged) ||
+                  (!recedesCovered &&
+                      ((animation.status.isAnimating &&
+                              (animation.status == AnimationStatus.reverse ||
+                                  dragged)) ||
+                          _isDragBackActive)));
   }
 
   void retakeSnapshot() {
@@ -247,9 +257,11 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   }
 
   void _handleStatus(AnimationStatus _) {
-    _updateMotionSnapshot();
     updateBarItems();
+    _updateMotionSnapshot();
   }
+
+  void _handleSheetCoverStatus(AnimationStatus _) => _updateMotionSnapshot();
 
   void _handleUserGesture() {
     updateBarItems();
@@ -323,6 +335,8 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       ..addListener(updateBarItems);
     _userGesture = navigator?.userGestureInProgressNotifier
       ?..addListener(_handleUserGesture);
+    _sheetCover = sheetCoverOfRoute(this)
+      ..addStatusListener(_handleSheetCoverStatus);
   }
 
   @override
@@ -334,6 +348,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
       ..removeListener(updateBarItems)
       ..removeStatusListener(_handleStatus);
     _userGesture?.removeListener(_handleUserGesture);
+    _sheetCover?.removeStatusListener(_handleSheetCoverStatus);
     _nextOverdrag?.removeListener(_copyOverdrag);
     _nextSecondary?.removeStatusListener(_handleNextSecondaryStatus);
     _coveringOverdrag.dispose();
@@ -345,6 +360,7 @@ mixin CardRouteMixin<T> on ModalRoute<T> {
   }
 
   Widget _snapshotWhileMoving(BuildContext context, Widget child) {
+    _glass = LiquidGlassScope.of(context);
     _updateMotionSnapshot();
     // The snapshot has no host over it, so one within takes the page's panes
     // for it, and they come out as glass rather than a flat tint.
@@ -470,7 +486,7 @@ class HomeRoute<T> extends PageRoute<T> with CardRouteMixin<T> {
     return Semantics(
       scopesRoute: true,
       explicitChildNodes: true,
-      child: builder(context),
+      child: scopePageRoute(this, builder(context)),
     );
   }
 }

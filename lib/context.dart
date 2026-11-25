@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/color.dart';
 import 'package:prism_ui/inherited.dart';
+import 'package:prism_ui/list_text.dart';
 import 'package:prism_ui/metrics.dart';
 import 'package:prism_ui/theme_data.dart';
 import 'package:prism_ui/typography.dart';
@@ -54,16 +55,18 @@ extension BuildContextExtension on BuildContext {
   Duration motionDuration(Duration duration) =>
       disableAnimations ? Duration.zero : duration;
 
-  TextStyle get listTitleStyle =>
-      AppTextStyle.body.of(this).copyWith(color: colorScheme.onSurface);
+  TextStyle get listTitleStyle => ListTextScope.of(
+    this,
+  ).title.of(this).copyWith(color: colorScheme.onSurface);
 
   /// A value at a row's end, set apart from the row's title.
-  TextStyle get listValueStyle =>
-      AppTextStyle.body.of(this).copyWith(color: colorScheme.onSurfaceVariant);
+  TextStyle get listValueStyle => ListTextScope.of(
+    this,
+  ).title.of(this).copyWith(color: colorScheme.onSurfaceVariant);
 
-  TextStyle get listSubtitleStyle => AppTextStyle.subheadline
-      .of(this)
-      .copyWith(color: colorScheme.onSurfaceVariant);
+  TextStyle get listSubtitleStyle => ListTextScope.of(
+    this,
+  ).subtitle.of(this).copyWith(color: colorScheme.onSurfaceVariant);
 
   TextStyle get listCaptionStyle => AppTextStyle.footnote
       .of(this)

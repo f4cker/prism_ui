@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:prism_ui/common_button.dart';
 import 'package:prism_ui/context.dart';
+import 'package:prism_ui/measure.dart';
 import 'package:prism_ui/metrics.dart';
 import 'package:prism_ui/theme_data.dart';
 import 'package:prism_ui/typography.dart';
@@ -22,7 +23,7 @@ class ListRow extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
     this.horizontalTitleGap,
     this.minVerticalPadding,
-    this.minHeight = listRowMinHeight,
+    this.minHeight,
     this.alignment = ListRowAlignment.center,
   });
 
@@ -36,7 +37,7 @@ class ListRow extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final double? horizontalTitleGap;
   final double? minVerticalPadding;
-  final double minHeight;
+  final double? minHeight;
   final ListRowAlignment alignment;
 
   static const _defaultTitleGap = 16.0;
@@ -53,21 +54,25 @@ class ListRow extends StatelessWidget {
         .of(context, emphasized: true)
         .copyWith(color: colorScheme.onSurfaceVariant);
     final iconColor = colorScheme.onSurfaceVariant;
+    final buttonTheme = ButtonTheme.of(context);
     // As ListTile does: an icon theme a slot sets must not recolor a button.
     final iconButtonColor =
-        ButtonTheme.of(context).icon?.foregroundColor?.resolve(const {}) ??
-        iconColor;
+        buttonTheme.icon?.foregroundColor?.resolve(const {}) ?? iconColor;
     final leading = this.leading;
     final subtitle = this.subtitle;
     final trailing = this.trailing;
-    return IconTheme.merge(
-      data: IconThemeData(color: iconColor),
-      child: ButtonTheme.merge(
+    // IconTheme.merge and ButtonTheme.merge, without the element each adds.
+    final iconTheme =
+        context.dependOnInheritedWidgetOfExactType<IconTheme>()?.data ??
+        const IconThemeData.fallback();
+    return IconTheme(
+      data: iconTheme.merge(IconThemeData(color: iconColor)),
+      child: ButtonTheme(
         data: ButtonThemeData(
           icon: ButtonStyle(
             foregroundColor: WidgetStatePropertyAll(iconButtonColor),
           ),
-        ),
+        ).merge(buttonTheme),
         child: _ListRowLayout(
           padding: EdgeInsets.fromLTRB(
             math.max(safe.left, inset.left),
@@ -82,7 +87,7 @@ class ListRow extends StatelessWidget {
               (subtitle == null
                   ? listRowVerticalPadding
                   : listTwoLineRowVerticalPadding),
-          minHeight: minHeight,
+          minHeight: minHeight ?? context.listRowHeight,
           alignment: alignment,
           leading: leading == null
               ? null
@@ -272,6 +277,22 @@ class _RenderListRow extends RenderBox
 
   double _leadingSlot(double width) => math.max(listLeadingSlotWidth, width);
 
+  double _sideExtent(double? height) => switch ((height, _alignment)) {
+    (null, _) => 0,
+    (final height?, ListRowAlignment.center) => height,
+    (final height?, ListRowAlignment.top) => height + 2 * _minVerticalPadding,
+  };
+
+  double _rowHeight(
+    double titleHeight,
+    double? subtitleHeight,
+    double? leadingHeight,
+    double? trailingHeight,
+  ) => math.max(
+    _height(titleHeight, subtitleHeight),
+    math.max(_sideExtent(leadingHeight), _sideExtent(trailingHeight)),
+  );
+
   double _sideY(double height, double rowHeight) => switch (_alignment) {
     ListRowAlignment.center => (rowHeight - height) / 2,
     ListRowAlignment.top => _minVerticalPadding,
@@ -310,14 +331,10 @@ class _RenderListRow extends RenderBox
   );
 
   @override
-  double computeMinIntrinsicHeight(double width) {
-    final inner = math.max(0.0, width - _padding.horizontal);
-    return _height(
-          _title.getMinIntrinsicHeight(inner),
-          _subtitle?.getMinIntrinsicHeight(inner),
-        ) +
-        _padding.vertical;
-  }
+  double computeMinIntrinsicHeight(double width) => _computeSizes(
+    ChildLayoutHelper.dryLayoutChild,
+    BoxConstraints(maxWidth: width),
+  ).size.height;
 
   @override
   double computeMaxIntrinsicHeight(double width) =>
@@ -391,7 +408,14 @@ class _RenderListRow extends RenderBox
         : layoutChild(subtitle, text).height;
     final height = constraints
         .deflate(_padding)
-        .constrainHeight(_height(titleHeight, subtitleHeight));
+        .constrainHeight(
+          _rowHeight(
+            titleHeight,
+            subtitleHeight,
+            leadingSize?.height,
+            trailingSize?.height,
+          ),
+        );
     final blockHeight = subtitleHeight == null
         ? titleHeight
         : titleHeight + subtitleHeight;

@@ -6,7 +6,11 @@ import '../helpers/host_scaffold.dart';
 import '../helpers/test_app.dart';
 
 void main() {
-  Future<void> pumpSection(WidgetTester tester, double width) async {
+  Future<void> pumpSection(
+    WidgetTester tester,
+    double width, {
+    ListTextScale scale = ListTextScale.regular,
+  }) async {
     tester.view.physicalSize = Size(width, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -18,18 +22,22 @@ void main() {
             child: Builder(
               builder: (context) => Padding(
                 padding: context.listInsets.page(),
-                child: generateSection(
-                  items: [
-                    DecorationListItem(
-                      title: const Text('one line'),
-                      onPressed: () {},
-                    ),
-                    DecorationListItem(
-                      title: const Text('two lines'),
-                      subtitle: const Text('subtitle'),
-                      onPressed: () {},
-                    ),
-                  ],
+                child: ListTextScope(
+                  scale: scale,
+                  child: generateSection(
+                    title: 'header',
+                    items: [
+                      DecorationListItem(
+                        title: const Text('one line'),
+                        onPressed: () {},
+                      ),
+                      DecorationListItem(
+                        title: const Text('two lines'),
+                        subtitle: const Text('subtitle'),
+                        onPressed: () {},
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -76,6 +84,57 @@ void main() {
     expect(twoLines.bottom - subtitle.bottom, 10);
     expect(twoLines.height, 62);
   });
+
+  testWidgets('a compact section sets each line a step smaller with the same '
+      'paddings, so its rows stand 51 and 58', (tester) async {
+    await pumpSection(tester, 402, scale: ListTextScale.compact);
+
+    expect(tester.getSize(row('one line')).height, 51);
+    expect(tester.getSize(row('two lines')).height, 58);
+    expect(tester.getSize(find.text('header')).height, 20);
+    expect(
+      tester
+          .widget<RichText>(
+            find.descendant(
+              of: find.text('header'),
+              matching: find.byType(RichText),
+            ),
+          )
+          .text
+          .style
+          ?.fontWeight,
+      FontWeight.w600,
+    );
+  });
+
+  for (final textScale in [1.0, 1.3, 2.0]) {
+    testWidgets('a row asked to stand 48 keeps the padding it has at the '
+        'default text size at ${textScale}x', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = textScale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        TestApp(
+          child: HostScaffold(
+            body: Column(
+              children: [
+                DecorationListItem(
+                  title: const Text('short'),
+                  minHeight: 48,
+                  onPressed: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        tester.getSize(row('short')).height -
+            tester.getSize(find.text('short')).height,
+        26,
+      );
+    });
+  }
 
   testWidgets('a section rounds its ends with the list corner as a '
       'superellipse', (tester) async {
